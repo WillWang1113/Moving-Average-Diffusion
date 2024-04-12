@@ -1,9 +1,16 @@
 import torch
 import os
+import matplotlib.pyplot as plt
 
 # from torch.utils.tensorboard import SummaryWriter
 # from src.models.diffusion import DDPM
 
+def loss_func(inputs, targets, loss_scale):
+    err = (inputs - targets) **2
+    err = torch.sum(err, dim=1)
+    err = err * loss_scale
+    return err.mean()
+    
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""

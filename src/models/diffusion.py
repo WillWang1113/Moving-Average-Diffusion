@@ -1,5 +1,5 @@
 import torch
-from src.schedules.exponential import exponential_schedule
+from src.schedules.collection import exponential_schedule
 
 
 class DDPM(object):
@@ -24,8 +24,11 @@ class DDPM(object):
             t_tensor = torch.tensor(t, device=x.device).repeat(x.shape[0])
             noise_pred = backbone(x, t_tensor)
             mu_pred = (
-                x - (1 - self.alphas[t]) / (torch.sqrt(self.alpha_bars[t])) * noise_pred
-            )
+                x
+                - (1 - self.alphas[t])
+                / torch.sqrt(1 - self.alpha_bars[t])
+                * noise_pred
+            ) / torch.sqrt(self.alphas[t])
             if t == 0:
                 sigma = 0
             else:
