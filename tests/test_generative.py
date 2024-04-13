@@ -9,11 +9,11 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 local_name = Path(__file__).name.split(".")[0]
 
-T = 1000
+T = 100
 min_beta = 1e-4
 max_beta = 2e-2
-hidden_size = 256
-epochs = 1000
+hidden_size = 1024
+epochs = 50
 train_dl, test_dl = syntheic_sine()
 
 batch = next(iter(train_dl))
@@ -25,10 +25,10 @@ output_ts = batch["tp_to_predict"].shape[1]
 tp_to_predict = batch["tp_to_predict"][0].squeeze()
 
 diff = diffusion.DDPM(T=T, min_beta=min_beta, max_beta=max_beta, device=device)
-bb = backbone.UNetBackbone(seq_channels=seq_channels).to(device)
+bb = backbone.UNetBackbone(seq_channels).to(device)
 
 # bb = backbone.MLPBackbone(
-#     dim=input_dim, timesteps=input_ts, hidden_size=hidden_size, T=T
+#     seq_channels=seq_channels, seq_length=input_ts, hidden_size=hidden_size
 # ).to(device)
 print("\n")
 print("MODEL PARAM:")
@@ -37,7 +37,7 @@ print("\n")
 trainer = Trainer(
     diffusion=diff,
     backbone=bb,
-    optimizer=torch.optim.Adam(bb.parameters()),
+    optimizer=torch.optim.Adam(bb.parameters(), lr=1e-4),
     device=device,
     epochs=epochs,
     train_loss_fn=torch.nn.MSELoss(reduction="mean"),
@@ -57,6 +57,6 @@ ax[0].legend()
 for i in range(1, 4):
     ax[i].plot(sample_pred[..., i], c="black", alpha=0.75, label="generated")
     ax[i].legend()
-ax.set_title(f'Backbone: {bb._get_name()}')
+fig.suptitle(f'Backbone: {bb._get_name()}')
 fig.tight_layout()
 fig.savefig(f"assets/{local_name}.png")

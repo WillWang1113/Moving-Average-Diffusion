@@ -46,8 +46,8 @@ class UNetBackbone(nn.Module):
         self,
         seq_channels: int,
         latent_channels: int = 64,
-        ch_mults: Union[Tuple[int, ...], List[int]] = (1, 2, 2, 4),
-        is_attn: Union[Tuple[bool, ...], List[bool]] = (False, False, True, True),
+        ch_mults: Union[Tuple[int, ...], List[int]] = (1, 2, 4),
+        is_attn: Union[Tuple[bool, ...], List[bool]] = (False, False, True),
         n_blocks: int = 2,
     ):
         """
@@ -139,6 +139,7 @@ class UNetBackbone(nn.Module):
 
         # `h` will store outputs at each resolution for skip connection
         h = [x]
+        
         # First half of U-Net
         for m in self.down:
             x = m(x, t)
@@ -159,4 +160,5 @@ class UNetBackbone(nn.Module):
                 x = m(x, t)
 
         # Final normalization and convolution
-        return self.final(self.act(self.norm(x)))
+        x = self.final(self.act(self.norm(x)))
+        return x.permute(0, 2, 1)

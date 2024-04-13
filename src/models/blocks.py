@@ -53,13 +53,13 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x: torch.Tensor, t: torch.Tensor):
         """
-        * `x` has shape `[batch_size, in_channels, height, width]`
+        * `x` has shape `[batch_size, in_channels, seq_length]`
         * `t` has shape `[batch_size, time_channels]`
         """
         # First convolution layer
         h = self.conv1(self.act1(self.norm1(x)))
         # Add time embeddings
-        h += self.time_emb(self.time_act(t))[:, :, None, None]
+        h += self.time_emb(self.time_act(t))[:, :, None]
         # Second convolution layer
         h = self.conv2(self.dropout(self.act2(self.norm2(h))))
 
@@ -215,7 +215,7 @@ class Upsample(nn.Module):
 
     def __init__(self, n_channels):
         super().__init__()
-        self.conv = nn.ConvTranspose1d(n_channels, n_channels, (4, 4), (2, 2), (1, 1))
+        self.conv = nn.ConvTranspose1d(n_channels, n_channels, 4, 2, 1)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor):
         # `t` is not used, but it's kept in the arguments because for the attention layer function signature
@@ -231,7 +231,7 @@ class Downsample(nn.Module):
 
     def __init__(self, n_channels):
         super().__init__()
-        self.conv = nn.Conv1d(n_channels, n_channels, (3, 3), (2, 2), (1, 1))
+        self.conv = nn.Conv1d(n_channels, n_channels, 3, 2, 1)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor):
         # `t` is not used, but it's kept in the arguments because for the attention layer function signature
