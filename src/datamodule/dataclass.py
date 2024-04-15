@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import pandas as pd
+from ..utils.fourier import dft, idft
 
 
 class TimeSeries(Dataset):
@@ -16,6 +17,7 @@ class TimeSeries(Dataset):
         col_out: list,
         tp_to_predict: torch.Tensor,
         observed_tp: torch.Tensor = None,
+        frequency = False,
         **kwargs,
     ):
         cols = df.columns.to_list()
@@ -53,6 +55,13 @@ class TimeSeries(Dataset):
         self.his_data = torch.from_numpy(hist_var).float()
         self.future_features = torch.from_numpy(future_var).float()
         self.fc_data = torch.from_numpy(fc_target).float()
+        
+        # # ! test!
+        if frequency:
+            self.his_data = dft(self.his_data)
+            self.fc_data = dft(self.fc_data)
+        
+        
         self.tp_tp_predict = tp_to_predict.expand(len(hist_var), -1, len(window_target))
         self.observed_tp = (
             observed_tp.expand(len(hist_var), -1, len(window_in_features))

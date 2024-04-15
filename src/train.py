@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 # from torch.utils.tensorboard import SummaryWriter
 # from src.models.diffusion import DDPM
 
+
 def loss_func(inputs, targets, loss_scale):
-    err = (inputs - targets) **2
+    err = (inputs - targets) ** 2
     err = torch.sum(err, dim=1)
     err = err * loss_scale
     return err.mean()
-    
+
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
@@ -60,7 +61,6 @@ class Trainer:
     def __init__(
         self,
         diffusion,
-        backbone: torch.nn.Module,
         epochs: int,
         optimizer: torch.optim.Optimizer,
         train_loss_fn,
@@ -72,7 +72,6 @@ class Trainer:
         output_pth: str = "./",
     ) -> None:
         self.diffusion = diffusion
-        self.backbone = backbone
         self.epochs = epochs
         self.alpha = alpha
         self.train_loss_fn = train_loss_fn
@@ -90,24 +89,24 @@ class Trainer:
 
     def train(self, train_dataloader, val_dataloader=None, epochs: int = None):
         E = epochs if epochs is not None else self.epochs
-        T = self.diffusion.T
         # torch.save(self.model, self.output_pth)
         for e in range(E):
-            self.backbone.train()
+            # set train mode
+            self.diffusion.backbone.train()
+            if self.diffusion.conditioner is not None:
+                self.diffusion.conditioner.train()
+                
             train_loss = 0
-
             for batch in train_dataloader:
                 for k in batch:
                     batch[k] = batch[k].to(self.device)
-                    batch_size = batch[k].shape[0]
-                t = torch.randint(0, T, (batch_size, )).to(self.device)
-                noise = torch.randn_like(batch["future_data"]).to(self.device)
-                x_noisy = self.diffusion.forward(batch["future_data"], t, noise)
-                eps_theta = self.backbone(x_noisy, t)
-                loss = self.train_loss_fn(eps_theta, noise)
+
+                # get target
+                x = batch.pop("future_data")
+                loss = self.diffusion.get_loss(x, condition=batch)
 
                 train_loss += loss
-                for p in self.backbone.parameters():
+                for p in self.diffusion.backbone.parameters():
                     loss += 0.5 * self.alpha * (p * p).sum()
 
                 # Backpropagation
@@ -161,23 +160,27 @@ class Trainer:
         return test_loss / len(dataset)
 
     def test(self, dataset, scaler=None, n_sample=1):
-        self.backbone.eval()
+        self.diffusion.backbone.eval()
+        if self.diffusion.conditioner is not None:
+            self.diffusion.conditioner.eval()
         y_pred, y_real = [], []
         for batch in dataset:
             for k in batch:
                 batch[k] = batch[k].to(self.device)
+            target = batch.pop("future_data")
+            print(batch.keys())
             samples = []
             for _ in range(n_sample):
-                noise = torch.randn_like(batch['future_data']).to(self.device)
-                s = self.diffusion.backward(noise, self.backbone)
+                noise = torch.randn_like(target).to(self.device)
+                s = self.diffusion.backward(noise, batch)
                 samples.append(s)
             samples = torch.stack(samples, dim=-1)
             y_pred.append(samples)
-            y_real.append(batch["future_data"])
+            y_real.append(target)
         y_pred = torch.concat(y_pred)
         y_real = torch.concat(y_real)
 
-        # inverse transform
+        # TODO: inverse transform
         if scaler:
             print("--" * 30, "inverse transform", "--" * 30)
             mean, std = scaler["data"]

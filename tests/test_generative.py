@@ -1,9 +1,11 @@
 import torch
-from src.models import backbone, diffusion
+from src.models import conditioner, backbone, diffusion
 from src.train import Trainer
 from src.datamodule.dataset import syntheic_sine
 import matplotlib.pyplot as plt
 from pathlib import Path
+
+from src.utils.fourier import idft
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -12,51 +14,103 @@ local_name = Path(__file__).name.split(".")[0]
 T = 100
 min_beta = 1e-4
 max_beta = 2e-2
-hidden_size = 1024
-epochs = 50
-train_dl, test_dl = syntheic_sine()
+hidden_size = 512
+latent_dim = 64
+epochs = 500
+frequency = False
+train_dl, test_dl = syntheic_sine(frequency=frequency)
+n_sample = 10
 
 batch = next(iter(train_dl))
-input_ts, seq_channels = (
+seq_length, seq_channels = (
     batch["observed_data"].shape[1],
     batch["observed_data"].shape[2],
+)
+target_seq_length, target_seq_channels = (
+    batch["future_data"].shape[1],
+    batch["future_data"].shape[2],
 )
 output_ts = batch["tp_to_predict"].shape[1]
 tp_to_predict = batch["tp_to_predict"][0].squeeze()
 
-diff = diffusion.DDPM(T=T, min_beta=min_beta, max_beta=max_beta, device=device)
-bb = backbone.UNetBackbone(seq_channels).to(device)
+bb_net = backbone.MLPBackbone(
+    seq_channels=target_seq_channels,
+    seq_length=target_seq_length,
+    hidden_size=hidden_size,
+)
+# bb_net = backbone.UNetBackbone(seq_channels)
+cond_net = conditioner.MLPConditioner(
+    seq_channels=seq_channels,
+    seq_length=seq_length,
+    hidden_size=hidden_size,
+    # latent_dim=64*4,
+    latent_dim=hidden_size,
+)
+diff = diffusion.DDPM(
+    backbone=bb_net,
+    conditioner=cond_net,
+    T=T,
+    min_beta=min_beta,
+    max_beta=max_beta,
+    device=device,
+    frequency=frequency,
+)
 
-# bb = backbone.MLPBackbone(
-#     seq_channels=seq_channels, seq_length=input_ts, hidden_size=hidden_size
-# ).to(device)
 print("\n")
 print("MODEL PARAM:")
-print(sum([torch.numel(p) for p in bb.parameters()]))
+print(
+    sum([torch.numel(p) for p in bb_net.parameters()])
+    + sum([torch.numel(p) for p in cond_net.parameters()])
+)
 print("\n")
+params = list(bb_net.parameters()) + list(cond_net.parameters())
 trainer = Trainer(
     diffusion=diff,
-    backbone=bb,
-    optimizer=torch.optim.Adam(bb.parameters(), lr=1e-4),
+    optimizer=torch.optim.Adam(params, lr=1e-4),
     device=device,
     epochs=epochs,
     train_loss_fn=torch.nn.MSELoss(reduction="mean"),
 )
 trainer.train(train_dl)
-y_pred, y_real = trainer.test(train_dl, n_sample=10)
-print(y_pred.shape)
-print(y_real.shape)
 
-sample_pred = y_pred[0, :, 0, :].cpu().numpy()
-sample_real = y_real[0, :, 0].cpu().numpy()
 
-fig, ax = plt.subplots(2, 2)
-ax = ax.flatten()
-ax[0].plot(sample_real, label="real")
-ax[0].legend()
-for i in range(1, 4):
-    ax[i].plot(sample_pred[..., i], c="black", alpha=0.75, label="generated")
-    ax[i].legend()
-fig.suptitle(f'Backbone: {bb._get_name()}')
-fig.tight_layout()
-fig.savefig(f"assets/{local_name}.png")
+if cond_net is None:
+    # Generative task
+    y_pred, y_real = trainer.test(train_dl, n_sample=n_sample)
+
+    # # ! test !
+    if frequency:
+        y_real = idft(y_real)
+
+    sample_pred = y_pred[0, :, 0, :].cpu().numpy()
+    sample_real = y_real[0, :, 0].cpu().numpy()
+
+    fig, ax = plt.subplots(2, 2)
+    ax = ax.flatten()
+    ax[0].plot(sample_real, label="real")
+    ax[0].legend()
+    for i in range(1, 4):
+        ax[i].plot(sample_pred[..., i], c="black", alpha=0.75, label="generated")
+        ax[i].legend()
+    fig.suptitle(f"Backbone: {bb_net._get_name()}")
+    fig.tight_layout()
+    fig.savefig(f"assets/{local_name}.png")
+else:
+    # forecast task
+
+    y_pred, y_real = trainer.test(test_dl, n_sample=n_sample)
+
+    # # ! test !
+    if frequency:
+        y_real = idft(y_real)
+
+    sample_pred = y_pred[0, :, 0, :].cpu().numpy()
+    sample_real = y_real[0, :, 0].cpu().numpy()
+
+    fig, ax = plt.subplots()
+    ax.plot(sample_real, label="real")
+    ax.legend()
+    ax.plot(sample_pred, c="black", alpha=1 / n_sample)
+    fig.suptitle(f"Backbone: {bb_net._get_name()}")
+    fig.tight_layout()
+    fig.savefig(f"assets/{local_name}.png")

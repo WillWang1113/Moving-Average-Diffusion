@@ -1,6 +1,5 @@
 from torch import nn
 import torch
-import math
 from typing import Optional
 
 

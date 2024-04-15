@@ -6,7 +6,7 @@ from src.datamodule.dataclass import TimeSeries
 from sklearn.model_selection import train_test_split
 
 # toy dataset
-def syntheic_sine(t_steps=2000, batch_size=128):
+def syntheic_sine(t_steps=2000, batch_size=128, frequency=False):
     ti = np.linspace(0, 20 * np.pi, t_steps)
     period_t_steps = int(t_steps / 10)
     tp_train = torch.linspace(0, 4 * np.pi, period_t_steps * 2)
@@ -34,6 +34,7 @@ def syntheic_sine(t_steps=2000, batch_size=128):
         "col_out": [],
         "observed_tp": tp_train[:period_t_steps].unsqueeze(0).unsqueeze(-1),
         "tp_to_predict": tp_train[period_t_steps:].unsqueeze(0).unsqueeze(-1),
+        "frequency": frequency
     }
     df_train, df_test = train_test_split(df, test_size=0.2, shuffle=False)
     train_ds = TimeSeries(df_train, **CONFIG)

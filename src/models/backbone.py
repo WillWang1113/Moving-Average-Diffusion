@@ -1,6 +1,5 @@
 import torch
-import math
-from typing import Optional, List, Union, Tuple
+from typing import List, Union, Tuple
 from torch import nn
 from torchvision.ops import MLP
 from .embedding import GaussianFourierProjection, SinusoidalPosEmb
@@ -8,9 +7,19 @@ from .blocks import UpBlock, DownBlock, MiddleBlock, Downsample, Upsample
 
 
 class MLPBackbone(nn.Module):
+    """
+    ## MLP backbone
+    """
+
     def __init__(
-        self, seq_channels: int, seq_length: int, hidden_size: int, num_layers: int = 10
+        self, seq_channels: int, seq_length: int, hidden_size: int, n_layers: int = 10
     ) -> None:
+        """
+        * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
+        * `seq_length` is the number of timesteps in the time series.
+        * `hidden_size` is the hidden size
+        * `n_layers` is the number of MLP
+        """
         super(MLPBackbone, self).__init__()
         self.embedder = nn.Linear(seq_channels * seq_length, hidden_size)
         self.unembedder = nn.Linear(hidden_size, seq_channels * seq_length)
@@ -22,15 +31,18 @@ class MLPBackbone(nn.Module):
                     hidden_channels=[1024, hidden_size],
                     dropout=0.1,
                 )
-                for _ in range(num_layers)
+                for _ in range(n_layers)
             ]
         )
         self.channals = seq_channels
         self.length = seq_length
 
-    def forward(self, x, t, conditions=None):
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
         x = self.pe(x, t, use_time_axis=False)
+        if condition is not None:
+            assert x.shape == condition.shape
+            x = x + condition
         for layer in self.net:
             x = x + layer(x)
         x = self.unembedder(x).reshape((-1, self.length, self.channals))
@@ -63,7 +75,9 @@ class UNetBackbone(nn.Module):
         n_resolutions = len(ch_mults)
 
         # Project time series into feature map
-        self.ts_proj = nn.Conv1d(seq_channels, latent_channels, kernel_size=3, padding=1)
+        self.ts_proj = nn.Conv1d(
+            seq_channels, latent_channels, kernel_size=3, padding=1
+        )
 
         # Time embedding layer. Time embedding has `n_channels * 4` channels
         self.time_emb = SinusoidalPosEmb(latent_channels * 4)
@@ -79,7 +93,9 @@ class UNetBackbone(nn.Module):
             # Add `n_blocks`
             for _ in range(n_blocks):
                 down.append(
-                    DownBlock(in_channels, out_channels, latent_channels * 4, is_attn[i])
+                    DownBlock(
+                        in_channels, out_channels, latent_channels * 4, is_attn[i]
+                    )
                 )
                 in_channels = out_channels
             # Down sample at all resolutions except the last
@@ -109,7 +125,9 @@ class UNetBackbone(nn.Module):
                 )
             # Final block to reduce the number of channels
             out_channels = in_channels // ch_mults[i]
-            up.append(UpBlock(in_channels, out_channels, latent_channels * 4, is_attn[i]))
+            up.append(
+                UpBlock(in_channels, out_channels, latent_channels * 4, is_attn[i])
+            )
             in_channels = out_channels
             # Up sample at all resolutions except last
             if i > 0:
@@ -123,7 +141,7 @@ class UNetBackbone(nn.Module):
         self.act = nn.SELU()
         self.final = nn.Conv1d(in_channels, seq_channels, kernel_size=3, padding=1)
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor):
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         """
         * `x` has shape `[batch_size, seq, in_channels]`
         * `t` has shape `[batch_size]`
@@ -133,13 +151,17 @@ class UNetBackbone(nn.Module):
 
         # Get time-step embeddings
         t = self.time_emb(t)
+        if condition is not None:
+            assert condition.shape == t.shape
+            t = t + condition
 
         # Get image projection
         x = self.ts_proj(x)
-
+        
+        
         # `h` will store outputs at each resolution for skip connection
         h = [x]
-        
+
         # First half of U-Net
         for m in self.down:
             x = m(x, t)
