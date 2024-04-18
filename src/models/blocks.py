@@ -28,13 +28,13 @@ class ResidualBlock(nn.Module):
         """
         super().__init__()
         # Group normalization and the first convolution layer
-        self.norm1 = nn.GroupNorm(n_groups, in_channels)
-        self.act1 = nn.SELU()
+        # self.norm1 = nn.GroupNorm(n_groups, in_channels)
+        self.act1 = nn.SiLU()
         self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1)
 
         # Group normalization and the second convolution layer
-        self.norm2 = nn.GroupNorm(n_groups, out_channels)
-        self.act2 = nn.SELU()
+        # self.norm2 = nn.GroupNorm(n_groups, out_channels)
+        self.act2 = nn.SiLU()
         self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1)
 
         # If the number of input channels is not equal to the number of output channels we have to
@@ -46,7 +46,7 @@ class ResidualBlock(nn.Module):
 
         # Linear layer for time embeddings
         self.time_emb = nn.Linear(time_channels, out_channels)
-        self.time_act = nn.SELU()
+        self.time_act = nn.SiLU()
 
         self.dropout = nn.Dropout(dropout)
 
@@ -56,11 +56,11 @@ class ResidualBlock(nn.Module):
         * `t` has shape `[batch_size, time_channels]`
         """
         # First convolution layer
-        h = self.conv1(self.act1(self.norm1(x)))
+        h = self.conv1(self.act1(x))
         # Add time embeddings
         h += self.time_emb(self.time_act(t))[:, :, None]
         # Second convolution layer
-        h = self.conv2(self.dropout(self.act2(self.norm2(h))))
+        h = self.conv2(self.dropout(self.act2(h)))
 
         # Add the shortcut connection and return
         return h + self.shortcut(x)
@@ -88,7 +88,7 @@ class AttentionBlock(nn.Module):
         if d_k is None:
             d_k = n_channels
         # Normalization layer
-        self.norm = nn.GroupNorm(n_groups, n_channels)
+        # self.norm = nn.GroupNorm(n_groups, n_channels)
         # Projections for query, key and values
         self.projection = nn.Linear(n_channels, n_heads * d_k * 3)
         # Linear layer for final transformation

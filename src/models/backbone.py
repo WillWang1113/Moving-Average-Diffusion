@@ -3,7 +3,7 @@ from typing import List, Union, Tuple
 from torch import nn
 from torchvision.ops import MLP
 from .embedding import GaussianFourierProjection, SinusoidalPosEmb
-from .blocks import UpBlock, DownBlock, MiddleBlock, Downsample, Upsample
+from .blocks import UpBlock, DownBlock, MiddleBlock, Downsample, Upsample, ResidualBlock
 
 
 class MLPBackbone(nn.Module):
@@ -46,6 +46,33 @@ class MLPBackbone(nn.Module):
         for layer in self.net:
             x = x + layer(x)
         x = self.unembedder(x).reshape((-1, self.length, self.channals))
+        return x
+
+
+class ResNetBackbone(nn.Module):
+    def __init__(
+        self,
+        seq_channels,
+        seq_length,
+        latent_channels,
+    ) -> None:
+        super().__init__()
+        self.block1 = ResidualBlock(seq_channels, latent_channels, latent_channels * 4)
+        self.block2 = Downsample(latent_channels)
+        self.block3 = ResidualBlock(latent_channels, latent_channels, latent_channels * 4)
+        self.fc_out = MLP(latent_channels * (seq_length // 2), [seq_channels * seq_length])
+        self.time_emb = SinusoidalPosEmb(latent_channels * 4)
+        self.seq_channels = seq_channels
+        self.seq_length = seq_length
+
+    def forward(self, x, t, condition=None):
+        t = self.time_emb(t)
+        t = t + condition
+        x = x.permute(0, 2, 1)
+        x = self.block1(x, t)
+        x = self.block2(x, t)
+        x = self.block3(x, t)
+        x = self.fc_out(x.flatten(1)).reshape(-1, self.seq_length, self.seq_channels)
         return x
 
 
@@ -137,8 +164,8 @@ class UNetBackbone(nn.Module):
         self.up = nn.ModuleList(up)
 
         # Final normalization and convolution layer
-        self.norm = nn.GroupNorm(8, latent_channels)
-        self.act = nn.SELU()
+        # self.norm = nn.GroupNorm(8, latent_channels)
+        self.act = nn.SiLU()
         self.final = nn.Conv1d(in_channels, seq_channels, kernel_size=3, padding=1)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
@@ -152,13 +179,11 @@ class UNetBackbone(nn.Module):
         # Get time-step embeddings
         t = self.time_emb(t)
         if condition is not None:
-            assert condition.shape == t.shape
             t = t + condition
 
         # Get image projection
         x = self.ts_proj(x)
-        
-        
+
         # `h` will store outputs at each resolution for skip connection
         h = [x]
 
@@ -182,5 +207,7 @@ class UNetBackbone(nn.Module):
                 x = m(x, t)
 
         # Final normalization and convolution
-        x = self.final(self.act(self.norm(x)))
+        x = self.act(x)
+        # x = self.act(self.norm(x))
+        x = self.final(x)
         return x.permute(0, 2, 1)

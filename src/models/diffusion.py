@@ -1,11 +1,28 @@
+import abc
 from typing import Dict
 import torch
 from torch import nn
 from ..schedules.collection import linear_schedule
 from ..utils.fourier import idft
+from ..utils.misc import get_factors, moving_avg
 
 
-class DDPM(object):
+class BaseDiffusion(abc.ABC):
+    def forward(self, x: torch.Tensor, t: torch.Tensor):
+        raise NotImplementedError()
+
+    @torch.no_grad
+    def backward(self, x: torch.Tensor, condition: Dict[str, torch.Tensor] = None):
+        raise NotImplementedError()
+
+    def get_loss(self, x: torch.Tensor, condition: Dict[str, torch.Tensor] = None):
+        raise NotImplementedError()
+
+    def encode_condition(self, condition: Dict[str, torch.Tensor] = None):
+        raise NotImplementedError()
+
+
+class DDPM(BaseDiffusion):
     def __init__(
         self,
         backbone: nn.Module,
@@ -37,7 +54,7 @@ class DDPM(object):
         return x_noisy
 
     @torch.no_grad
-    def backward(self, x: torch.Tensor, condition: Dict[str, torch.Tensor] = None):
+    def backward(self, x, condition):
         """Reverse diffusion. From noise to data.
 
         Args:
@@ -95,3 +112,50 @@ class DDPM(object):
         else:
             c = None
         return c
+
+
+class MovingAvgDiffusion(BaseDiffusion):
+    """MovingAvgDiffusion. Limit to the average terms be the factors of the seq_length
+
+    Args:
+        BaseDiffusion (_type_): _description_
+    """
+
+    def __init__(
+        self,
+        backbone: nn.Module,
+        conditioner: nn.Module = None,
+        frequency=False,
+        device="cpu",
+    ) -> None:
+        self.backbone = backbone.to(device)
+        self.conditioner = conditioner
+        if conditioner is not None:
+            self.conditioner = self.conditioner.to(device)
+            print("Have conditioner")
+        self.device = device
+        self.frequency = frequency
+        factors = get_factors(backbone.seq_length)
+        self.T = len(factors)
+        if frequency:
+            # TODO: implement frequency response multiplication
+            self.degrade_fn = None
+        else:
+            self.degrade_fn = [moving_avg(f) for f in range(factors)]
+
+    def forward(self, x: torch.Tensor, t: torch.Tensor):
+        unique_t, indexes = torch.unique(t, return_inverse=True, sorted=True)
+        unique_idx = torch.unique(
+            indexes,
+            sorted=True,
+        )
+        x_avged = []
+        # !BUG: mixed indexes
+        for i in unique_idx:
+            sub_t = unique_t[i]
+            sub_batch = x[indexes == i]
+            degrade_fn = self.degrade_fn[sub_t]
+            x_avged.append(degrade_fn(sub_batch))
+        x_avged = torch.concat(x_avged)
+
+        return x_avged

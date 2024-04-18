@@ -83,3 +83,11 @@ def idft(x: torch.Tensor) -> torch.Tensor:
     ), f"The inverse DFT and the input should have the same size. Got {x_time.size()} and {x.size()} instead."
 
     return x_time.detach()
+
+
+def moving_average_freq_response(N: int, sample_rate: float, freq: torch.Tensor):
+    omega = 2 * torch.pi * freq / sample_rate
+    coeff = torch.exp(-1j * omega * (N - 1) / 2) / N
+    omega = torch.where(omega == 0, 1e-5, omega)
+    Hw = coeff * torch.sin(omega * N / 2) / torch.sin(omega / 2)
+    return Hw

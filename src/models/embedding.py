@@ -68,7 +68,7 @@ class SinusoidalPosEmb(nn.Module):
         # First linear layer
         self.lin1 = nn.Linear(self.n_channels // 4, self.n_channels)
         # Activation
-        self.act = nn.SELU()
+        self.act = nn.SiLU()
         # Second linear layer
         self.lin2 = nn.Linear(self.n_channels, self.n_channels)
 

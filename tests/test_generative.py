@@ -16,8 +16,8 @@ min_beta = 1e-4
 max_beta = 2e-2
 hidden_size = 512
 latent_dim = 64
-epochs = 500
-frequency = False
+epochs = 50
+frequency = True
 train_dl, test_dl = syntheic_sine(frequency=frequency)
 n_sample = 10
 
@@ -30,25 +30,29 @@ target_seq_length, target_seq_channels = (
     batch["future_data"].shape[1],
     batch["future_data"].shape[2],
 )
-output_ts = batch["tp_to_predict"].shape[1]
-tp_to_predict = batch["tp_to_predict"][0].squeeze()
 
-bb_net = backbone.MLPBackbone(
-    seq_channels=target_seq_channels,
-    seq_length=target_seq_length,
-    hidden_size=hidden_size,
-)
-# bb_net = backbone.UNetBackbone(seq_channels)
-cond_net = conditioner.MLPConditioner(
-    seq_channels=seq_channels,
-    seq_length=seq_length,
-    hidden_size=hidden_size,
-    # latent_dim=64*4,
-    latent_dim=hidden_size,
-)
+
+
+# bb_net = backbone.MLPBackbone(
+#     seq_channels=target_seq_channels,
+#     seq_length=target_seq_length,
+#     hidden_size=hidden_size,
+# )
+# ! problem on unet on forecasting
+bb_net = backbone.UNetBackbone(seq_channels, latent_channels=64, n_blocks=1)
+# print(bb_net)
+# bb_net = backbone.ResNetBackbone(seq_channels, seq_length=seq_length, latent_channels=128)
+cond_net = None
+# cond_net = conditioner.MLPConditioner(
+#     seq_channels=seq_channels,
+#     seq_length=seq_length,
+#     hidden_size=hidden_size,
+#     latent_dim=128 * 4,
+#     # latent_dim=hidden_size,
+# )
 diff = diffusion.DDPM(
     backbone=bb_net,
-    conditioner=cond_net,
+    # conditioner=cond_net,
     T=T,
     min_beta=min_beta,
     max_beta=max_beta,
@@ -58,12 +62,14 @@ diff = diffusion.DDPM(
 
 print("\n")
 print("MODEL PARAM:")
-print(
-    sum([torch.numel(p) for p in bb_net.parameters()])
-    + sum([torch.numel(p) for p in cond_net.parameters()])
-)
+print("Denoise Network:\t",
+    sum([torch.numel(p) for p in bb_net.parameters()]))
+# print('Condition Network:\t',
+#     sum([torch.numel(p) for p in cond_net.parameters()])
+# )
 print("\n")
-params = list(bb_net.parameters()) + list(cond_net.parameters())
+# params = list(bb_net.parameters()) + list(cond_net.parameters())
+params = list(bb_net.parameters())
 trainer = Trainer(
     diffusion=diff,
     optimizer=torch.optim.Adam(params, lr=1e-4),
