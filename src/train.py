@@ -70,6 +70,7 @@ class Trainer:
         inputs: list = [],
         target: list = [],
         output_pth: str = "./",
+        **kwargs
     ) -> None:
         self.diffusion = diffusion
         self.epochs = epochs
@@ -114,6 +115,7 @@ class Trainer:
                 loss.backward()
 
                 self.optimizer.step()
+                break
 
             train_loss /= len(train_dataloader)
 
@@ -171,6 +173,7 @@ class Trainer:
             print(batch.keys())
             samples = []
             for _ in range(n_sample):
+                # TODO: put this into diffusion class, only give API for trainer
                 noise = torch.randn_like(target).to(self.device)
                 s = self.diffusion.backward(noise, batch)
                 samples.append(s)

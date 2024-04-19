@@ -34,8 +34,8 @@ class MLPBackbone(nn.Module):
                 for _ in range(n_layers)
             ]
         )
-        self.channals = seq_channels
-        self.length = seq_length
+        self.seq_channals = seq_channels
+        self.seq_length = seq_length
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
@@ -45,8 +45,66 @@ class MLPBackbone(nn.Module):
             x = x + condition
         for layer in self.net:
             x = x + layer(x)
-        x = self.unembedder(x).reshape((-1, self.length, self.channals))
+        x = self.unembedder(x).reshape((-1, self.seq_length, self.seq_channals))
         return x
+
+
+# class FreqBackbone(nn.Module):
+#     """
+#     ## MLP backbone
+#     """
+
+#     def __init__(
+#         self,
+#         seq_channels: int,
+#         seq_length: int,
+#         hidden_size: int,
+#         n_layers: int = 10,
+#         stereographic=False,
+#     ) -> None:
+#         """
+#         * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
+#         * `seq_length` is the number of timesteps in the time series.
+#         * `hidden_size` is the hidden size
+#         * `n_layers` is the number of MLP
+#         """
+#         super().__init__()
+#         self.embedder = nn.Linear(seq_channels * seq_length, hidden_size)
+#         self.pe = GaussianFourierProjection(hidden_size)
+#         self.net = nn.ModuleList(  # type: ignore
+#             [
+#                 MLP(
+#                     in_channels=hidden_size,
+#                     hidden_channels=[1024, hidden_size],
+#                     dropout=0.1,
+#                 )
+#                 for _ in range(n_layers)
+#             ]
+#         )
+#         self.channals = seq_channels
+#         self.length = seq_length
+#         self.stereographic = stereographic
+#         self.theta_out = nn.Linear(hidden_size, seq_channels * seq_length // 2)
+#         self.phi_out = nn.Linear(
+#             hidden_size, seq_channels * seq_length - seq_channels * seq_length // 2
+#         )
+
+#     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+#         bs = x.shape[0]
+#         x = self.embedder(x.flatten(1))
+#         x = self.pe(x, t, use_time_axis=False)
+#         if condition is not None:
+#             assert x.shape == condition.shape
+#             x = x + condition
+#         for layer in self.net:
+#             # x = layer(x)
+#             x = x + layer(x)
+
+#         theta = self.theta_out(x)
+#         phi = self.phi_out(x)
+#         theta = theta.reshape(bs, -1, self.channals)
+#         phi = phi.reshape(bs, -1, self.channals)
+#         return torch.concat((theta, phi), dim=1)
 
 
 class ResNetBackbone(nn.Module):
@@ -59,8 +117,12 @@ class ResNetBackbone(nn.Module):
         super().__init__()
         self.block1 = ResidualBlock(seq_channels, latent_channels, latent_channels * 4)
         self.block2 = Downsample(latent_channels)
-        self.block3 = ResidualBlock(latent_channels, latent_channels, latent_channels * 4)
-        self.fc_out = MLP(latent_channels * (seq_length // 2), [seq_channels * seq_length])
+        self.block3 = ResidualBlock(
+            latent_channels, latent_channels, latent_channels * 4
+        )
+        self.fc_out = MLP(
+            latent_channels * (seq_length // 2), [seq_channels * seq_length]
+        )
         self.time_emb = SinusoidalPosEmb(latent_channels * 4)
         self.seq_channels = seq_channels
         self.seq_length = seq_length

@@ -4,7 +4,8 @@ import torch
 from torch import nn
 from ..schedules.collection import linear_schedule
 from ..utils.fourier import idft
-from ..utils.misc import get_factors, moving_avg
+from ..utils.misc import get_factors, MovingAvg
+import matplotlib.pyplot as plt
 
 
 class BaseDiffusion(abc.ABC):
@@ -27,7 +28,7 @@ class DDPM(BaseDiffusion):
         self,
         backbone: nn.Module,
         conditioner: nn.Module = None,
-        frequency=False,
+        freq_kw={"frequency": False, "stereographic": False},
         T=100,
         min_beta=1e-4,
         max_beta=2e-2,
@@ -45,8 +46,9 @@ class DDPM(BaseDiffusion):
         self.alpha_bars = alpha_bars
         self.T = T
         self.device = device
-        self.frequency = frequency
+        self.freq_kw = freq_kw
 
+    @torch.no_grad
     def forward(self, x, t, noise):
         mu_coeff = torch.sqrt(self.alpha_bars[t]).reshape(-1, 1, 1)
         var_coeff = torch.sqrt(1 - self.alpha_bars[t]).reshape(-1, 1, 1)
@@ -84,8 +86,8 @@ class DDPM(BaseDiffusion):
                 )
             x = mu_pred + sigma * z
 
-        if self.frequency:
-            x = idft(x)
+        if self.freq_kw["frequency"]:
+            x = idft(x, self.freq_kw["stereographic"])
 
         return x
 
@@ -97,6 +99,13 @@ class DDPM(BaseDiffusion):
 
         # corrupt data
         x_noisy = self.forward(x, t, noise)
+
+        # look at corrupted data
+        # fig, ax = plt.subplots()
+        # ax.plot(x_noisy[0].detach())
+        # fig.suptitle(f'{t[0].detach()}')
+        # fig.savefig(f'assets/noisy_{t[0]}.png')
+        # plt.close()
 
         # eps_theta
         c = self.encode_condition(condition)
@@ -114,8 +123,10 @@ class DDPM(BaseDiffusion):
         return c
 
 
-class MovingAvgDiffusion(BaseDiffusion):
-    """MovingAvgDiffusion. Limit to the average terms be the factors of the seq_length
+class MovingAvgDiffusion(DDPM):
+    """MovingAvgDiffusion. Limit to the average terms be the factors of the seq_length.
+
+    Following Cold Diffusion
 
     Args:
         BaseDiffusion (_type_): _description_
@@ -125,7 +136,7 @@ class MovingAvgDiffusion(BaseDiffusion):
         self,
         backbone: nn.Module,
         conditioner: nn.Module = None,
-        frequency=False,
+        freq_kw={"frequency": False, "stereographic": False},
         device="cpu",
     ) -> None:
         self.backbone = backbone.to(device)
@@ -134,28 +145,70 @@ class MovingAvgDiffusion(BaseDiffusion):
             self.conditioner = self.conditioner.to(device)
             print("Have conditioner")
         self.device = device
-        self.frequency = frequency
+        self.freq_kw = freq_kw
         factors = get_factors(backbone.seq_length)
         self.T = len(factors)
-        if frequency:
+        if freq_kw["frequency"]:
             # TODO: implement frequency response multiplication
             self.degrade_fn = None
         else:
-            self.degrade_fn = [moving_avg(f) for f in range(factors)]
+            self.degrade_fn = [MovingAvg(f) for f in factors]
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor):
+    @torch.no_grad
+    def forward(self, x: torch.Tensor, t: torch.Tensor, noise: torch.Tensor = None):
         unique_t, indexes = torch.unique(t, return_inverse=True, sorted=True)
         unique_idx = torch.unique(
             indexes,
             sorted=True,
         )
-        x_avged = []
-        # !BUG: mixed indexes
         for i in unique_idx:
             sub_t = unique_t[i]
-            sub_batch = x[indexes == i]
             degrade_fn = self.degrade_fn[sub_t]
-            x_avged.append(degrade_fn(sub_batch))
-        x_avged = torch.concat(x_avged)
+            x[indexes == i] = degrade_fn(x[indexes == i])
+        return x
 
-        return x_avged
+    @torch.no_grad
+    def backward(self, x: torch.Tensor, condition: Dict[str, torch.Tensor] = None):
+        c = self.encode_condition(condition)
+
+        # introduce a little noise
+        # x = x + torch.randn_like(x) * 1e-4
+
+        for t in range(self.T - 1, 0, -1):
+            t_tensor = torch.tensor(t, device=x.device).repeat(x.shape[0])
+            x_hat = self.backbone(x, t_tensor, c)
+            x = x - self.degrade_fn[t](x_hat) + self.degrade_fn[t - 1](x_hat)
+
+        if self.freq_kw["frequency"]:
+            x = idft(x, self.freq_kw["stereographic"])
+
+        return x
+
+    def get_loss(self, x, condition: dict = None):
+        batch_size = x.shape[0]
+        # sample t, x_T
+        t = torch.randint(0, self.T, (batch_size,)).to(self.device)
+
+        # Hot diff
+        # noise = torch.randn_like(x).to(self.device)
+        # cold diff
+        noise = None
+
+        # corrupt data
+        x_noisy = self.forward(x, t, noise)
+
+        # look at corrupted data
+        # fig, ax = plt.subplots()
+        # ax.plot(x_hat[0].detach())
+        # fig.suptitle(f'{t[0].detach()}')
+        # fig.savefig(f'assets/noisy_{t[0]}.png')
+        # plt.close()
+
+        # eps_theta
+        c = self.encode_condition(condition)
+        x_hat = self.backbone(x_noisy, t, c)
+        
+
+        # compute loss
+        loss = nn.functional.mse_loss(x_hat, x)
+        return loss

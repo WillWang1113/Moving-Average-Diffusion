@@ -1,0 +1,20 @@
+backbone: MLPBackbone
+bb_config:
+  hidden_size: 512
+  # latent_dim: 64
+
+conditioner: ''
+cn_config: ~
+
+diffusion: MovingAvgDiffusion
+diff_config:
+  freq_kw: 
+    frequency: false
+    stereographic: false
+  # T: 100
+  # min_beta: 1.0e-4
+  # max_beta: 2.0e-2
+
+train_config:
+  epochs: 50
+  lr: 1.0e-4
