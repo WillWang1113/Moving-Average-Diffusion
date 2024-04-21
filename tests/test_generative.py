@@ -8,28 +8,19 @@ from src.utils.fourier import idft
 import yaml
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
+print("Using: ", device)
 local_name = Path(__file__).name.split(".")[0]
 
 config = yaml.safe_load(open("configs/test_generative.yaml", "r"))
-print(config)
 bb = getattr(backbone, config["backbone"])
 cn = getattr(conditioner, config["conditioner"], None)
 df = getattr(diffusion, config["diffusion"])
-print('Backbone:\t', config["backbone"])
-print('Conditioner:\t', config["conditioner"])
-print('Diffusion:\t', config["diffusion"])
+print("Backbone:\t", config["backbone"])
+print("Conditioner:\t", config["conditioner"])
+print("Diffusion:\t", config["diffusion"])
 freq_kw = config["diff_config"]["freq_kw"]
 
-# T = 100
-# min_beta = 1e-4
-# max_beta = 2e-2
-# hidden_size = 1024
-# latent_dim = 64
-# epochs = 500
-# frequency = True
-# stereographic = True
-# freq_kw = {'frequency':frequency, 'stereographic':stereographic}
+
 train_dl, test_dl = syntheic_sine(freq_kw=freq_kw)
 n_sample = 10
 
@@ -43,16 +34,31 @@ target_seq_length, target_seq_channels = (
     batch["future_data"].shape[2],
 )
 
+print("\n")
+print("MODEL PARAM:")
 
 bb_net = bb(
     seq_channels=target_seq_channels,
     seq_length=target_seq_length,
     **config["bb_config"],
 )
+print("Denoise Network:\t", sum([torch.numel(p) for p in bb_net.parameters()]))
+params = list(bb_net.parameters())
+
 if cn is not None:
-    cond_net = cn()
+    cond_net = cn(
+        seq_channels=target_seq_channels,
+        seq_length=target_seq_length,
+        target_seq_channels=target_seq_channels,
+        target_seq_length=target_seq_length,
+        **config["cn_config"],
+    )
+    print("Condition Network:\t", sum([torch.numel(p) for p in cond_net.parameters()]))
+    params = params + list(cond_net.parameters())
 else:
     cond_net = None
+print("\n")
+
 
 diff = df(backbone=bb_net, conditioner=cond_net, **config["diff_config"])
 
@@ -74,31 +80,13 @@ diff = df(backbone=bb_net, conditioner=cond_net, **config["diff_config"])
 #     # latent_dim=hidden_size,
 # )
 
-# diff = diffusion.DDPM(
-#     backbone=bb_net,
-#     # conditioner=cond_net,
-#     T=T,
-#     min_beta=min_beta,
-#     max_beta=max_beta,
-#     device=device,
-#     freq_kw=freq_kw,
-# )
 
-
-print("\n")
-print("MODEL PARAM:")
-print("Denoise Network:\t", sum([torch.numel(p) for p in bb_net.parameters()]))
-# print('Condition Network:\t',
-#     sum([torch.numel(p) for p in cond_net.parameters()])
-# )
-print("\n")
-# params = list(bb_net.parameters()) + list(cond_net.parameters())
-params = list(bb_net.parameters())
+# params = list(bb_net.parameters())
 trainer = Trainer(
     diffusion=diff,
     optimizer=torch.optim.Adam(params, lr=config["train_config"]["lr"]),
     device=device,
-    train_loss_fn=torch.nn.MSELoss(reduction="mean"),
+    # train_loss_fn=torch.nn.MSELoss(reduction="mean"),
     **config["train_config"],
 )
 trainer.train(train_dl)

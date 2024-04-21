@@ -112,18 +112,18 @@ class ResNetBackbone(nn.Module):
         self,
         seq_channels,
         seq_length,
-        latent_channels,
+        hidden_size,
     ) -> None:
         super().__init__()
-        self.block1 = ResidualBlock(seq_channels, latent_channels, latent_channels * 4)
-        self.block2 = Downsample(latent_channels)
+        self.block1 = ResidualBlock(seq_channels, hidden_size, hidden_size * 4)
+        self.block2 = Downsample(hidden_size)
         self.block3 = ResidualBlock(
-            latent_channels, latent_channels, latent_channels * 4
+            hidden_size, hidden_size, hidden_size * 4
         )
         self.fc_out = MLP(
-            latent_channels * (seq_length // 2), [seq_channels * seq_length]
+            hidden_size * (seq_length // 2), [seq_channels * seq_length]
         )
-        self.time_emb = SinusoidalPosEmb(latent_channels * 4)
+        self.time_emb = SinusoidalPosEmb(hidden_size * 4)
         self.seq_channels = seq_channels
         self.seq_length = seq_length
 

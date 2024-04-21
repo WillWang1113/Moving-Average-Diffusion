@@ -1,15 +1,39 @@
 import torch
 from torch import nn
 from torchvision.ops import MLP
+import abc
 
 
-class MLPConditioner(nn.Module):
+class BaseConditioner(nn.Module, abc.ABC):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+    def forward(
+        self,
+        observed_data: torch.Tensor,
+        observed_tp: torch.Tensor = None,
+        future_features: torch.Tensor = None,
+    ):
+        raise NotImplementedError()
+
+    def base_predict(
+        self,
+        observed_data: torch.Tensor,
+        observed_tp: torch.Tensor = None,
+        future_features: torch.Tensor = None,
+    ):
+        raise NotImplementedError()
+
+
+class MLPConditioner(BaseConditioner):
     def __init__(
         self,
         seq_channels,
         seq_length,
         hidden_size,
         latent_dim,
+        target_seq_channels,
+        target_seq_length,
         future_seq_channels=None,
         future_seq_length=None,
         encode_tp=False,
@@ -33,15 +57,12 @@ class MLPConditioner(nn.Module):
         self.input_enc = MLP(
             in_channels=all_input_channel, hidden_channels=[hidden_size, latent_dim]
         )
-
-    # def forward(
-    #     self, observed_data, future_data=None, observed_tp=None, future_features=None
-    # ):
-    #     return self.encode_input(
-    #         observed_data=observed_data,
-    #         observed_tp=observed_tp,
-    #         future_features=future_features,
-    #     )
+        self.rep_out = MLP(
+            in_channels=latent_dim,
+            hidden_channels=[latent_dim, target_seq_channels * target_seq_length],
+        )
+        self.target_seq_channels = target_seq_channels
+        self.target_seq_length = target_seq_length
 
     def forward(self, observed_data, observed_tp=None, future_features=None, **kwargs):
         trajs_to_encode = observed_data.flatten(1)  # (batch_size, input_ts, input_dim)
@@ -61,6 +82,17 @@ class MLPConditioner(nn.Module):
             )
         return self.input_enc(trajs_to_encode)
 
+    def base_predict(
+        self,
+        observed_data: torch.Tensor,
+        observed_tp: torch.Tensor = None,
+        future_features: torch.Tensor = None, **kwargs
+    ):
+        latent_rep = self.forward(observed_data, observed_tp, future_features)
+        return self.rep_out(latent_rep).reshape(
+            -1, self.target_seq_length, self.target_seq_channels
+        )
+
 
 class RNNConditioner(nn.Module):
     def __init__(
@@ -75,11 +107,10 @@ class RNNConditioner(nn.Module):
         frequency=False,
     ) -> None:
         super().__init__()
-        
 
     def forward(self):
         pass
-    
+
 
 class CNNConditioner(nn.Module):
     def __init__(self, *args, **kwargs) -> None:

@@ -1,16 +1,20 @@
-backbone: MLPBackbone
+backbone: ResNetBackbone
 bb_config:
-  hidden_size: 512
+  hidden_size: 256
   # latent_dim: 64
 
-conditioner: ''
-cn_config: ~
+conditioner: MLPConditioner
+cn_config:
+  hidden_size: 1024
+  latent_dim: 1024
+
 
 diffusion: MovingAvgDiffusion
 diff_config:
   freq_kw: 
-    frequency: false
-    stereographic: false
+    frequency: off
+    stereographic: off
+  seq_length: 200
   # T: 100
   # min_beta: 1.0e-4
   # max_beta: 2.0e-2

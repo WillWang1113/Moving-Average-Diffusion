@@ -63,7 +63,7 @@ class Trainer:
         diffusion,
         epochs: int,
         optimizer: torch.optim.Optimizer,
-        train_loss_fn,
+        # train_loss_fn,
         alpha: float = 0,
         early_stop: int = -1,
         device: str = "cpu",
@@ -75,7 +75,7 @@ class Trainer:
         self.diffusion = diffusion
         self.epochs = epochs
         self.alpha = alpha
-        self.train_loss_fn = train_loss_fn
+        # self.train_loss_fn = train_loss_fn
         self.optimizer = optimizer
         self.device = device
         self.inputs = inputs
@@ -170,11 +170,11 @@ class Trainer:
             for k in batch:
                 batch[k] = batch[k].to(self.device)
             target = batch.pop("future_data")
-            print(batch.keys())
+            # target_shape = target.shape
             samples = []
             for _ in range(n_sample):
                 # TODO: put this into diffusion class, only give API for trainer
-                noise = torch.randn_like(target).to(self.device)
+                noise = self.diffusion.init_noise(target, batch)
                 s = self.diffusion.backward(noise, batch)
                 samples.append(s)
             samples = torch.stack(samples, dim=-1)
