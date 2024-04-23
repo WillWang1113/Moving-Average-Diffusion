@@ -4,6 +4,7 @@ from src.train import Trainer
 from src.datamodule.dataset import syntheic_sine
 import matplotlib.pyplot as plt
 from pathlib import Path
+from src.utils.filters import get_factors
 from src.utils.fourier import idft
 import yaml
 
@@ -60,7 +61,7 @@ else:
 print("\n")
 
 
-diff = df(backbone=bb_net, conditioner=cond_net, **config["diff_config"])
+diff = df(backbone=bb_net, conditioner=cond_net, device=device, **config["diff_config"])
 
 # bb_net = backbone.FreqBackbone(
 #     seq_channels=target_seq_channels,
@@ -95,6 +96,7 @@ trainer.train(train_dl)
 if cond_net is None:
     # Generative task
     y_pred, y_real = trainer.test(test_dl, n_sample=n_sample)
+    print(y_pred.shape)
 
     # # ! test !
     if freq_kw["frequency"]:
@@ -122,13 +124,35 @@ else:
     if freq_kw["frequency"]:
         y_real = idft(y_real, freq_kw["stereographic"])
 
-    sample_pred = y_pred[0, :, 0, :].cpu().numpy()
-    sample_real = y_real[0, :, 0].cpu().numpy()
+    bs, ts, dims, Ts, n_sample = y_pred.shape
+    ma_terms = [1] + get_factors(ts) + [ts]
+    assert Ts == len(ma_terms)
+    for ii in range(Ts):
+        L = ma_terms[-ii - 1]
+        sample_real = y_real.cpu().numpy()[0,:,0]
+        # sample_real = torch.nn.functional.avg_pool1d(
+        #     sample_real, kernel_size=L, stride=L
+        # ).permute(0, 2, 1)[0,:,0]
+        if freq_kw['frequency']:
+            sample_pred = y_pred[0, :, 0, ii, :].cpu().numpy()
+            # sample_pred = y_pred[0, L - 1 :: L, 0, ii, :].cpu().numpy()
+        # else:
+            # sample_pred = y_pred[0, L // 2 :: L , 0, ii, :].cpu().numpy()
 
-    fig, ax = plt.subplots()
-    ax.plot(sample_real, label="real")
-    ax.legend()
-    ax.plot(sample_pred, c="black", alpha=1 / n_sample)
-    fig.suptitle(f"Backbone: {bb_net._get_name()}")
-    fig.tight_layout()
-    fig.savefig(f"assets/{local_name}.png")
+            
+            # sample_pred = y_pred.cpu()[:, : , 0, ii, :].permute(0, 2, 1)
+            # sample_pred = torch.nn.functional.avg_pool1d(
+            #     sample_pred, kernel_size=L, stride=L
+            # ).permute(0, 2, 1)[0].numpy()
+            
+        
+        # sample_real = sample_real[0, L - 1 :: L, 0]
+
+        fig, ax = plt.subplots()
+        ax.plot(sample_real, label="real")
+        ax.legend()
+        ax.plot(sample_pred, c="black", alpha=1 / n_sample)
+        fig.suptitle(f"ma_term: {L}")
+        fig.tight_layout()
+        fig.savefig(f"assets/{local_name}_{freq_kw['frequency']}_step_{ii}.png")
+        plt.close()

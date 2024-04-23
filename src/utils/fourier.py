@@ -55,7 +55,6 @@ def idft(x: torch.Tensor, stereographic=False) -> torch.Tensor:
         x_time = irfft(x_freq, dim=1, norm="ortho")
 
     assert isinstance(x_time, torch.Tensor)
-    print(x_time.shape)
 
     return x_time.detach()
 

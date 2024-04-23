@@ -1,5 +1,4 @@
 import abc
-from re import L
 from typing import Dict
 import torch
 from torch import nn
@@ -179,45 +178,45 @@ class MovingAvgDiffusion(BaseDiffusion):
     def backward(self, x: torch.Tensor, condition: Dict[str, torch.Tensor] = None):
         c = self._encode_condition(condition)
 
-        # introduce a little noise
-        # x = x + torch.randn_like(x) * 1e-4
-
-        for t in range(self.T - 1, 0, -1):
+        x_ts = [x.clone()]
+        for t in range(self.T - 1, -1, -1):
             t_tensor = torch.tensor(t, device=x.device).repeat(x.shape[0])
             x_hat = self.backbone(x, t_tensor, c)
 
-            x = x - self.degrade_fn[t](x_hat) + self.degrade_fn[t - 1](x_hat)
-            fig, ax = plt.subplots()
-            ax.plot(x_hat[0].detach())
-            fig.suptitle(f"{t}")
-            fig.savefig(f"assets/denoise_{t}.png")
-            plt.close()
+            if t == 0:
+            # x = self.degrade_fn[t - 1](x_hat)
+                # x = x_hat
+                x = x - self.degrade_fn[t](x_hat) + x_hat
+            else:
+                x = x - self.degrade_fn[t](x_hat) + self.degrade_fn[t - 1](x_hat)
+                
+            # fig, ax = plt.subplots()
+            # ax.plot(x[0].detach())
+            # fig.suptitle(f"{t}")
+            # fig.savefig(f"assets/denoise_{t}.png")
+            # plt.close()
+            x_ts.append(x)
             
 
         if self.freq_kw["frequency"]:
-            x = idft(x, self.freq_kw["stereographic"])
+            x_ts = [idft(x_t, self.freq_kw["stereographic"]) for x_t in x_ts]
 
-        return x
+        return torch.stack(x_ts, dim=-1)
 
     def get_loss(self, x, condition: dict = None):
         batch_size = x.shape[0]
         # sample t, x_T
         t = torch.randint(0, self.T, (batch_size,)).to(self.device)
 
-        # Hot diff
-        # noise = torch.randn_like(x).to(self.device)
-        # cold diff
-        # noise = None
-
         # corrupt data
         x_noisy = self.forward(x, t)
 
         # look at corrupted data
-        fig, ax = plt.subplots()
-        ax.plot(x_noisy[0].detach())
-        fig.suptitle(f'{t[0].detach()}')
-        fig.savefig(f'assets/noisy_{t[0]}.png')
-        plt.close()
+        # fig, ax = plt.subplots()
+        # ax.plot(x_noisy[0].detach())
+        # fig.suptitle(f'{t[0].detach()}')
+        # fig.savefig(f'assets/noisy_{t[0]}.png')
+        # plt.close()
 
         # eps_theta
         c = self._encode_condition(condition)
@@ -238,8 +237,10 @@ class MovingAvgDiffusion(BaseDiffusion):
                     * (self.T - 1),
                 )
             else:
-                noise = (
-                    torch.zeros_like(x, device=x.device)
+                noise = self.forward(
+                    x,
+                    torch.ones((x.shape[0],), device=x.device, dtype=torch.int)
+                    * (self.T - 1),
                 )
 
         else:
@@ -253,8 +254,8 @@ class MovingAvgDiffusion(BaseDiffusion):
             # # zero-mean if data is pre-normalized?
             # noise = torch.zeros_like(x, device=x.device)
 
-            # add a small amount of noise
-        noise = noise + torch.randn_like(noise) * 1e-2
+        # add a small amount of noise
+        # noise = noise + torch.randint_like(noise, 10) * 5e-2
         return noise
 
     def _encode_condition(self, condition: dict = None):

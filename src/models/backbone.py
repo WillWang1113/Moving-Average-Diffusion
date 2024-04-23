@@ -12,7 +12,7 @@ class MLPBackbone(nn.Module):
     """
 
     def __init__(
-        self, seq_channels: int, seq_length: int, hidden_size: int, n_layers: int = 10
+        self, seq_channels: int, seq_length: int, hidden_size: int, n_layers: int = 3
     ) -> None:
         """
         * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
@@ -23,12 +23,14 @@ class MLPBackbone(nn.Module):
         super(MLPBackbone, self).__init__()
         self.embedder = nn.Linear(seq_channels * seq_length, hidden_size)
         self.unembedder = nn.Linear(hidden_size, seq_channels * seq_length)
-        self.pe = GaussianFourierProjection(hidden_size)
+        self.pe = SinusoidalPosEmb(hidden_size)
+
+        # self.pe = GaussianFourierProjection(hidden_size)
         self.net = nn.ModuleList(  # type: ignore
             [
                 MLP(
                     in_channels=hidden_size,
-                    hidden_channels=[1024, hidden_size],
+                    hidden_channels=[hidden_size * 2, hidden_size],
                     dropout=0.1,
                 )
                 for _ in range(n_layers)
@@ -39,7 +41,8 @@ class MLPBackbone(nn.Module):
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
-        x = self.pe(x, t, use_time_axis=False)
+        t = self.pe(t)
+        x = x+t
         if condition is not None:
             assert x.shape == condition.shape
             x = x + condition
@@ -117,12 +120,8 @@ class ResNetBackbone(nn.Module):
         super().__init__()
         self.block1 = ResidualBlock(seq_channels, hidden_size, hidden_size * 4)
         self.block2 = Downsample(hidden_size)
-        self.block3 = ResidualBlock(
-            hidden_size, hidden_size, hidden_size * 4
-        )
-        self.fc_out = MLP(
-            hidden_size * (seq_length // 2), [seq_channels * seq_length]
-        )
+        self.block3 = ResidualBlock(hidden_size, hidden_size, hidden_size * 4)
+        self.fc_out = MLP(hidden_size * (seq_length // 2), [seq_channels * seq_length])
         self.time_emb = SinusoidalPosEmb(hidden_size * 4)
         self.seq_channels = seq_channels
         self.seq_length = seq_length

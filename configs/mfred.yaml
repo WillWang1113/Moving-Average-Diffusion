@@ -1,3 +1,14 @@
+data_config:
+  target: value
+  n_in: 288
+  n_out: 288
+  shift: 0
+  col_in: 
+    - value
+  col_out: 
+    - t2m
+  batch_size: 128
+
 backbone: MLPBackbone
 bb_config:
   hidden_size: 256
@@ -8,7 +19,6 @@ conditioner: MLPConditioner
 cn_config:
   hidden_size: 256
   latent_dim: 256
-
 
 diffusion: MovingAvgDiffusion
 diff_config:

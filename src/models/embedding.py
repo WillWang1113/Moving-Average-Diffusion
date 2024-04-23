@@ -18,7 +18,7 @@ class GaussianFourierProjection(nn.Module):
         self.dense = nn.Linear(latent_dim, latent_dim)
 
     def forward(
-        self, x: torch.Tensor, timesteps: torch.Tensor, use_time_axis: bool = True
+        self, x: torch.Tensor, timesteps: torch.Tensor, use_time_axis: bool = False
     ) -> torch.Tensor:
         time_proj = timesteps[:, None] * self.W[None, :] * 2 * torch.pi
         embeddings = torch.cat([torch.sin(time_proj), torch.cos(time_proj)], dim=-1)

@@ -15,9 +15,8 @@ class TimeSeries(Dataset):
         shift: int,
         col_in: list,
         col_out: list,
-        tp_to_predict: torch.Tensor,
-        observed_tp: torch.Tensor = None,
         freq_kw={"frequency": False, "stereographic": False},
+        **kwargs,
     ):
         cols = df.columns.to_list()
         window_in_features, window_out_features, window_target = [], [], []
@@ -60,26 +59,14 @@ class TimeSeries(Dataset):
             self.his_data = dft(self.his_data, freq_kw["stereographic"])
             self.fc_data = dft(self.fc_data, freq_kw["stereographic"])
 
-        self.tp_tp_predict = tp_to_predict.expand(len(hist_var), -1, len(window_target))
-        self.observed_tp = (
-            observed_tp.expand(len(hist_var), -1, len(window_in_features))
-            if observed_tp is not None
-            else None
-        )
-
-        # if kwargs.get('avg_list')
-
     def __len__(self):
         return len(self.fc_data)
 
     def __getitem__(self, index):
         batch_data = {
             "observed_data": self.his_data[index],
-            "tp_to_predict": self.tp_tp_predict[index],
             "future_data": self.fc_data[index],
         }
-        if self.observed_tp.numel():
-            batch_data["observed_tp"] = self.observed_tp[index]
         if self.future_features.numel():
             batch_data["future_features"] = self.future_features[index]
         return batch_data

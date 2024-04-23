@@ -42,15 +42,20 @@ class MovingAvgTime(nn.Module):
     Moving average block to highlight the trend of time series, only for factors kernal size
     """
 
-    def __init__(self, kernel_size):
+    def __init__(self, kernel_size, stride=1):
         super(MovingAvgTime, self).__init__()
         self.kernel_size = kernel_size
-        self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=kernel_size)
+        self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride)
 
     def forward(self, x: torch.Tensor):
-        # padding on the both ends of time series
+        # orig_size = x.shape[1]
+        
+        front = x[:, 0:1, :].repeat(1, self.kernel_size // 2, 1)
+        end = x[:, -1:, :].repeat(1, self.kernel_size - 1 - self.kernel_size // 2, 1)
+        x = torch.cat([front, x, end], dim=1)
+        
         x = self.avg(x.permute(0, 2, 1))
-        x = nn.functional.interpolate(x, scale_factor=self.kernel_size)
+        # x = nn.functional.interpolate(x, size=orig_size, mode='linear')
         x = x.permute(0, 2, 1)
         return x
 
@@ -73,5 +78,5 @@ class MovingAvgFreq(torch.nn.Module):
     def forward(self, x: torch.Tensor):
         n_real = x.shape[1] // 2
         x_complex = torch.complex(x[:, :n_real, :], x[:, n_real:, :]).to(x.device)
-        x_filtered = x_complex * self.Hw
+        x_filtered = x_complex * self.Hw.to(x.device)
         return torch.concat([x_filtered.real, x_filtered.imag], dim=1)
