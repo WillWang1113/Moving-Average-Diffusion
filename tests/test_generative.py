@@ -50,8 +50,8 @@ if cn is not None:
     cond_net = cn(
         seq_channels=target_seq_channels,
         seq_length=target_seq_length,
-        target_seq_channels=target_seq_channels,
-        target_seq_length=target_seq_length,
+        # target_seq_channels=target_seq_channels,
+        # target_seq_length=target_seq_length,
         **config["cn_config"],
     )
     print("Condition Network:\t", sum([torch.numel(p) for p in cond_net.parameters()]))

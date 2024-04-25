@@ -3,7 +3,14 @@ from typing import List, Union, Tuple
 from torch import nn
 from torchvision.ops import MLP
 from .embedding import GaussianFourierProjection, SinusoidalPosEmb
-from .blocks import UpBlock, DownBlock, MiddleBlock, Downsample, Upsample, ResidualBlock
+from .blocks import (
+    UpBlock,
+    DownBlock,
+    MiddleBlock,
+    Downsample,
+    Upsample,
+    ResidualBlock,
+)
 
 
 class MLPBackbone(nn.Module):
@@ -12,7 +19,11 @@ class MLPBackbone(nn.Module):
     """
 
     def __init__(
-        self, seq_channels: int, seq_length: int, hidden_size: int, n_layers: int = 3
+        self,
+        seq_channels: int,
+        seq_length: int,
+        hidden_size: int,
+        n_layers: int = 3,
     ) -> None:
         """
         * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
@@ -24,8 +35,6 @@ class MLPBackbone(nn.Module):
         self.embedder = nn.Linear(seq_channels * seq_length, hidden_size)
         self.unembedder = nn.Linear(hidden_size, seq_channels * seq_length)
         self.pe = SinusoidalPosEmb(hidden_size)
-
-        # self.pe = GaussianFourierProjection(hidden_size)
         self.net = nn.ModuleList(  # type: ignore
             [
                 MLP(
@@ -42,7 +51,7 @@ class MLPBackbone(nn.Module):
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
         t = self.pe(t)
-        x = x+t
+        x = x + t
         if condition is not None:
             assert x.shape == condition.shape
             x = x + condition
@@ -112,17 +121,14 @@ class MLPBackbone(nn.Module):
 
 class ResNetBackbone(nn.Module):
     def __init__(
-        self,
-        seq_channels,
-        seq_length,
-        hidden_size,
+        self, seq_channels, seq_length, hidden_size, **kwargs
     ) -> None:
         super().__init__()
-        self.block1 = ResidualBlock(seq_channels, hidden_size, hidden_size * 4)
+        self.block1 = ResidualBlock(seq_channels, hidden_size, hidden_size)
         self.block2 = Downsample(hidden_size)
-        self.block3 = ResidualBlock(hidden_size, hidden_size, hidden_size * 4)
+        self.block3 = ResidualBlock(hidden_size, hidden_size, hidden_size)
         self.fc_out = MLP(hidden_size * (seq_length // 2), [seq_channels * seq_length])
-        self.time_emb = SinusoidalPosEmb(hidden_size * 4)
+        self.time_emb = SinusoidalPosEmb(hidden_size)
         self.seq_channels = seq_channels
         self.seq_length = seq_length
 
@@ -234,6 +240,7 @@ class UNetBackbone(nn.Module):
         * `x` has shape `[batch_size, seq, in_channels]`
         * `t` has shape `[batch_size]`
         """
+
         # Transpose
         x = x.permute(0, 2, 1)
 
@@ -271,4 +278,6 @@ class UNetBackbone(nn.Module):
         x = self.act(x)
         # x = self.act(self.norm(x))
         x = self.final(x)
-        return x.permute(0, 2, 1)
+        x = x.permute(0, 2, 1)
+
+        return x

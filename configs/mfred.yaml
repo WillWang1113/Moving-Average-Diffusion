@@ -8,27 +8,26 @@ data_config:
   col_out: 
     - t2m
   batch_size: 128
+  scale: on
 
+# backbone: ResNetBackbone
 backbone: MLPBackbone
 bb_config:
-  hidden_size: 256
-  # latent_dim: 64
-  n_layers: 10
+  hidden_size: 128
+  n_layers: 5
 
 conditioner: MLPConditioner
 cn_config:
-  hidden_size: 256
-  latent_dim: 256
+  hidden_size: 128
+  latent_dim: 128
 
 diffusion: MovingAvgDiffusion
 diff_config:
   freq_kw: 
-    frequency: on
+    frequency: off
     stereographic: off
-  seq_length: 400
-  # T: 100
-  # min_beta: 1.0e-4
-  # max_beta: 2.0e-2
+  seq_length: 288
+
 
 train_config:
   epochs: 300

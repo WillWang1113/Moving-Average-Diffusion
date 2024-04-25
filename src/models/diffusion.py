@@ -184,19 +184,18 @@ class MovingAvgDiffusion(BaseDiffusion):
             x_hat = self.backbone(x, t_tensor, c)
 
             if t == 0:
-            # x = self.degrade_fn[t - 1](x_hat)
+                # x = self.degrade_fn[t - 1](x_hat)
                 # x = x_hat
                 x = x - self.degrade_fn[t](x_hat) + x_hat
             else:
                 x = x - self.degrade_fn[t](x_hat) + self.degrade_fn[t - 1](x_hat)
-                
+
             # fig, ax = plt.subplots()
             # ax.plot(x[0].detach())
             # fig.suptitle(f"{t}")
             # fig.savefig(f"assets/denoise_{t}.png")
             # plt.close()
             x_ts.append(x)
-            
 
         if self.freq_kw["frequency"]:
             x_ts = [idft(x_t, self.freq_kw["stereographic"]) for x_t in x_ts]
@@ -229,19 +228,24 @@ class MovingAvgDiffusion(BaseDiffusion):
     def init_noise(self, x: torch.Tensor, condition: Dict[str, torch.Tensor] = None):
         # TODO: condition on basic predicion f(x)
         if (condition is not None) and (self.conditioner is not None):
-            # ! just for toy example
+            # ! just for test !
+            # ! use observed last !
             if self.freq_kw["frequency"]:
-                noise = self.forward(
-                    x,
-                    torch.ones((x.shape[0],), device=x.device, dtype=torch.int)
-                    * (self.T - 1),
-                )
+                prev_value = condition["observed_data"][:, [0], :]
+                prev_value = prev_value + torch.randn(1, device=x.device) * prev_value.max() * 0.1
+                noise = torch.concat([prev_value, torch.zeros(x.shape[0], x.shape[1]-1, x.shape[2])], dim=1)
+                
+                
             else:
-                noise = self.forward(
-                    x,
-                    torch.ones((x.shape[0],), device=x.device, dtype=torch.int)
-                    * (self.T - 1),
-                )
+                prev_value = condition["observed_data"][:, [-1], :]
+                prev_value = prev_value + torch.randn(1, device=x.device) * prev_value.max() * 0.1
+                noise = prev_value.expand_as(x)
+
+            # noise = self.forward(
+            #     x,
+            #     torch.ones((x.shape[0],), device=x.device, dtype=torch.int)
+            #     * (self.T - 1),
+            # )
 
         else:
             # condition on given target
@@ -255,7 +259,7 @@ class MovingAvgDiffusion(BaseDiffusion):
             # noise = torch.zeros_like(x, device=x.device)
 
         # add a small amount of noise
-        # noise = noise + torch.randint_like(noise, 10) * 5e-2
+        # noise = noise + torch.randn_like(noise, 10) * 5e-2
         return noise
 
     def _encode_condition(self, condition: dict = None):

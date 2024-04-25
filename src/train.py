@@ -2,8 +2,10 @@ import torch
 import os
 import matplotlib.pyplot as plt
 
-# from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
+
 # from src.models.diffusion import DDPM
+from tqdm import tqdm
 
 
 def loss_func(inputs, targets, loss_scale):
@@ -69,8 +71,8 @@ class Trainer:
         device: str = "cpu",
         inputs: list = [],
         target: list = [],
-        output_pth: str = "./",
-        **kwargs
+        output_pth: str = "/home/user/data/FrequencyDiffusion/savings",
+        **kwargs,
     ) -> None:
         self.diffusion = diffusion
         self.epochs = epochs
@@ -80,10 +82,10 @@ class Trainer:
         self.device = device
         self.inputs = inputs
         self.target = target
-        # self.writer = SummaryWriter(log_dir=f"runs/log")
-        self.output_pth = os.path.join(output_pth, "checkpoint.pt")
+        self.writer = SummaryWriter(log_dir="runs")
+        self.output_pth = output_pth
         self.early_stopper = (
-            EarlyStopping(patience=early_stop, path=self.output_pth)
+            EarlyStopping(patience=early_stop, path=output_pth)
             if early_stop > 0
             else None
         )
@@ -91,12 +93,12 @@ class Trainer:
     def train(self, train_dataloader, val_dataloader=None, epochs: int = None):
         E = epochs if epochs is not None else self.epochs
         # torch.save(self.model, self.output_pth)
-        for e in range(E):
+        for e in tqdm(range(E), ncols=50):
             # set train mode
             self.diffusion.backbone.train()
             if self.diffusion.conditioner is not None:
                 self.diffusion.conditioner.train()
-                
+
             train_loss = 0
             for batch in train_dataloader:
                 for k in batch:
@@ -115,20 +117,20 @@ class Trainer:
                 loss.backward()
 
                 self.optimizer.step()
-                break
 
             train_loss /= len(train_dataloader)
 
             if val_dataloader is not None:
                 val_loss = self.eval(val_dataloader)
-                # self.writer.add_scalars('loss', {"train": train_loss}, e)
-                # self.writer.add_scalars('loss', {"val": val_loss}, e)
+                self.writer.add_scalars(
+                    "Loss", {"train": train_loss, "val": val_loss}, e
+                )
 
-                if e % 1 == 0:
-                    print(
-                        "[Epoch %d/%d] [Train loss %.3f] [Val loss %.3f]"
-                        % (e, E, train_loss, val_loss)
-                    )
+                # if e % 20 == 0:
+                #     print(
+                #         "[Epoch %d/%d] [Train loss %.9f] [Val loss %.9f]"
+                #         % (e, E, train_loss, val_loss)
+                #     )
 
                 if self.early_stopper is not None:
                     self.early_stopper(val_loss, self.model)
@@ -137,10 +139,18 @@ class Trainer:
                         break
 
             else:
-                if e % 1 == 0:
-                    print("[Epoch %d/%d] [Train loss %.3f]" % (e, E, train_loss))
+                self.writer.add_scalar("Loss/train", train_loss, e)
+                # self.writer.add_scalars('loss', {"train": train_loss}, e)
+
+                # if e % 20 == 0:
+                #     print("[Epoch %d/%d] [Train loss %.9f]" % (e, E, train_loss))
+        self.writer.close()
         if val_dataloader is not None:
             self.model.load_state_dict(torch.load(self.output_pth).state_dict())
+        torch.save(self.diffusion.backbone, os.path.join(self.output_pth, "bb_net.pt"))
+        torch.save(
+            self.diffusion.conditioner, os.path.join(self.output_pth, "cn_net.pt")
+        )
 
     def eval(self, dataset):
         test_loss = 0
@@ -161,7 +171,7 @@ class Trainer:
                 test_loss += loss
         return test_loss / len(dataset)
 
-    def test(self, dataset, scaler=None, n_sample=1):
+    def test(self, dataset, n_sample=50):
         self.diffusion.backbone.eval()
         if self.diffusion.conditioner is not None:
             self.diffusion.conditioner.eval()
@@ -173,21 +183,20 @@ class Trainer:
             # target_shape = target.shape
             samples = []
             for _ in range(n_sample):
-                # TODO: put this into diffusion class, only give API for trainer
                 noise = self.diffusion.init_noise(target, batch)
                 s = self.diffusion.backward(noise, batch)
                 samples.append(s)
             samples = torch.stack(samples, dim=-1)
-            y_pred.append(samples)
-            y_real.append(target)
+            y_pred.append(samples.detach().cpu())
+            y_real.append(target.detach().cpu())
         y_pred = torch.concat(y_pred)
         y_real = torch.concat(y_real)
 
-        # TODO: inverse transform
-        if scaler:
-            print("--" * 30, "inverse transform", "--" * 30)
-            mean, std = scaler["data"]
-            target = scaler["target"]
-            y_pred = y_pred * std[target] + mean[target]
+        # # TODO: inverse transform
+        # if scaler:
+        #     print("--" * 30, "inverse transform", "--" * 30)
+        #     mean, std = scaler["data"]
+        #     target = scaler["target"]
+        #     y_pred = y_pred * std[target] + mean[target]
 
         return y_pred, y_real

@@ -2,6 +2,8 @@ import os
 
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler
 import torch
 import yaml
 from sklearn.model_selection import train_test_split
@@ -9,7 +11,7 @@ from torch.utils.data import DataLoader
 
 from src.datamodule.dataclass import TimeSeries
 
-root_pth = "/home/user/data/FrequencyDiffusion"
+root_pth = "/home/user/data/FrequencyDiffusion/dataset"
 
 
 # toy dataset
@@ -39,10 +41,19 @@ def syntheic_sine(t_steps=4000, batch_size=128, freq_kw=None):
         "col_in": ["value"],
         "col_out": [],
         "freq_kw": freq_kw,
+        "cols": df.columns.tolist(),
     }
-    df_train, df_test = train_test_split(df, test_size=0.2, shuffle=False)
-    train_ds = TimeSeries(df_train, **CONFIG)
-    test_ds = TimeSeries(df_test, **CONFIG)
+
+    window_width = CONFIG["shift"] + CONFIG["n_out"] + CONFIG["n_in"]
+
+    # Slide the total window
+    windows = np.lib.stride_tricks.sliding_window_view(df.values, window_width, axis=0)
+    windows = windows.transpose(0, 2, 1)
+
+    train_window, test_window = train_test_split(windows, test_size=0.2, shuffle=False)
+
+    train_ds = TimeSeries(train_window, **CONFIG)
+    test_ds = TimeSeries(test_window, **CONFIG)
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=False)
     test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
 
@@ -53,29 +64,62 @@ def mfred():
     df = pd.read_csv(
         os.path.join(root_pth, "MFRED_clean.csv"), index_col=0, parse_dates=True
     )
+    df[['hour','weekday']] = df[['hour','weekday']].astype('category')
     dummy_ = pd.get_dummies(df[["hour", "weekday"]], prefix_sep=":").astype("float")
     df = pd.concat([df, dummy_], axis=1)
+    df = df.drop(columns=["hour", "weekday"])
     CONFIG = yaml.safe_load(open("configs/mfred.yaml", "r"))
-    data_config = CONFIG['data_config']
-    data_config['freq_kw'] = CONFIG['diff_config']['freq_kw']
-    df_train, df_test = train_test_split(df, test_size=0.2, shuffle=False)
-    train_ds = TimeSeries(df_train, **data_config)
-    test_ds = TimeSeries(df_test, **data_config)
-    train_dl = DataLoader(train_ds, batch_size=data_config['batch_size'], shuffle=True)
-    test_dl = DataLoader(test_ds, batch_size=data_config['batch_size'], shuffle=False)
-    return train_dl, test_dl
+    data_config = CONFIG.pop("data_config")
+    data_config["freq_kw"] = CONFIG["diff_config"]["freq_kw"]
+    data_config["cols"] = df.columns.tolist()
+
+    ct = ColumnTransformer(
+        [("numbers", StandardScaler(), ["value", "t2m"])], remainder="passthrough"
+    )
+
+    train_df, _ = train_test_split(df, test_size=0.2, shuffle=False)
+    if data_config['scale']:
+        ct = ct.fit(train_df)
+        df = ct.transform(df)
+    # Slide the total window
+    window_width = data_config["shift"] + data_config["n_out"] + data_config["n_in"]
+    windows = np.lib.stride_tricks.sliding_window_view(df, window_width, axis=0)
+    windows = windows.transpose(0, 2, 1)
+
+    train_window, test_window = train_test_split(windows, train_size=len(train_df) - window_width + 1, shuffle=False)
+    train_ds = TimeSeries(train_window, **data_config)
+    test_ds = TimeSeries(test_window, **data_config)
+    train_dl = DataLoader(train_ds, batch_size=data_config["batch_size"], shuffle=True, num_workers=4, pin_memory=True)
+    test_dl = DataLoader(test_ds, batch_size=data_config["batch_size"], shuffle=False)
+    return train_dl, test_dl, CONFIG, ct
+
 
 def nrel():
     df = pd.read_csv(
         os.path.join(root_pth, "nrel_clean.csv"), index_col=0, parse_dates=True
     )
     CONFIG = yaml.safe_load(open("configs/nrel.yaml", "r"))
-    data_config = CONFIG['data_config']
-    data_config['freq_kw'] = CONFIG['diff_config']['freq_kw']
-    df_train, df_test = train_test_split(df, test_size=0.2, shuffle=False)
-    train_ds = TimeSeries(df_train, **data_config)
-    test_ds = TimeSeries(df_test, **data_config)
-    train_dl = DataLoader(train_ds, batch_size=data_config['batch_size'], shuffle=True)
-    test_dl = DataLoader(test_ds, batch_size=data_config['batch_size'], shuffle=False)
-    return train_dl, test_dl
+    data_config = CONFIG["data_config"]
+    data_config["freq_kw"] = CONFIG["diff_config"]["freq_kw"]
+    data_config["cols"] = df.columns.tolist()
     
+    ct = ColumnTransformer(
+        [("numbers", StandardScaler(), ["value", "t2m"])], remainder="passthrough"
+    )
+
+    train_df, _ = train_test_split(df, test_size=0.2, shuffle=False)
+    if data_config['scale']:
+        ct = ct.fit(train_df)
+        df = ct.transform(df)
+
+    # Slide the total window
+    window_width = data_config["shift"] + data_config["n_out"] + data_config["n_in"]
+    windows = np.lib.stride_tricks.sliding_window_view(df, window_width, axis=0)
+    windows = windows.transpose(0, 2, 1)
+    train_window, test_window = train_test_split(windows, train_size=len(train_df) - window_width + 1, shuffle=False)
+
+    train_ds = TimeSeries(train_window, **data_config)
+    test_ds = TimeSeries(test_window, **data_config)
+    train_dl = DataLoader(train_ds, batch_size=data_config["batch_size"], shuffle=True, num_workers=4, pin_memory=True)
+    test_dl = DataLoader(test_ds, batch_size=data_config["batch_size"], shuffle=False)
+    return train_dl, test_dl, CONFIG, ct

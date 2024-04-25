@@ -2,7 +2,7 @@ backbone: MLPBackbone
 bb_config:
   hidden_size: 256
   # latent_dim: 64
-  n_layers: 10
+  n_layers: 3
 
 conditioner: MLPConditioner
 cn_config:
