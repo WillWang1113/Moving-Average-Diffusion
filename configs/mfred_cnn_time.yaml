@@ -1,0 +1,34 @@
+data_config:
+  target: value
+  n_in: 288
+  n_out: 288
+  shift: 0
+  col_in: 
+    - value
+  col_out: 
+    - t2m
+  batch_size: 128
+  scale: on
+
+backbone: ResNetBackbone
+bb_config:
+  hidden_size: 128
+  n_layers: 5
+
+conditioner: MLPConditioner
+cn_config:
+  hidden_size: 128
+  latent_dim: 128
+
+diffusion: MovingAvgDiffusion
+diff_config:
+  freq_kw: 
+    frequency: off
+    stereographic: off
+  seq_length: 288
+
+
+train_config:
+  epochs: 150
+  lr: 2.0e-4
+  early_stop: 5

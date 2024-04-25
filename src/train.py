@@ -82,10 +82,10 @@ class Trainer:
         self.device = device
         self.inputs = inputs
         self.target = target
-        self.writer = SummaryWriter(log_dir="runs")
+        self.writer = SummaryWriter()
         self.output_pth = output_pth
         self.early_stopper = (
-            EarlyStopping(patience=early_stop, path=output_pth)
+            EarlyStopping(patience=early_stop, path=os.path.join(output_pth, 'checkpoint.pt'))
             if early_stop > 0
             else None
         )
@@ -95,9 +95,7 @@ class Trainer:
         # torch.save(self.model, self.output_pth)
         for e in tqdm(range(E), ncols=50):
             # set train mode
-            self.diffusion.backbone.train()
-            if self.diffusion.conditioner is not None:
-                self.diffusion.conditioner.train()
+            self._set_mode('train')
 
             train_loss = 0
             for batch in train_dataloader:
@@ -133,20 +131,22 @@ class Trainer:
                 #     )
 
                 if self.early_stopper is not None:
-                    self.early_stopper(val_loss, self.model)
+                    self.early_stopper(val_loss, (self.diffusion.backbone, self.diffusion.conditioner))
                     if self.early_stopper.early_stop:
                         print(f"Early Stop at Epoch {e+1}!\n")
                         break
 
             else:
-                self.writer.add_scalar("Loss/train", train_loss, e)
-                # self.writer.add_scalars('loss', {"train": train_loss}, e)
+                # self.writer.add_scalar("Loss/train", train_loss, e)
+                self.writer.add_scalars('Loss', {"train": train_loss}, e)
 
                 # if e % 20 == 0:
                 #     print("[Epoch %d/%d] [Train loss %.9f]" % (e, E, train_loss))
         self.writer.close()
         if val_dataloader is not None:
-            self.model.load_state_dict(torch.load(self.output_pth).state_dict())
+            bb, cn = torch.load(os.path.join(self.output_pth, 'checkpoint.pt'))
+            self.diffusion.backbone.load_state_dict(bb.state_dict())
+            self.diffusion.conditioner.load_state_dict(cn.state_dict())
         torch.save(self.diffusion.backbone, os.path.join(self.output_pth, "bb_net.pt"))
         torch.save(
             self.diffusion.conditioner, os.path.join(self.output_pth, "cn_net.pt")
@@ -154,27 +154,19 @@ class Trainer:
 
     def eval(self, dataset):
         test_loss = 0
-        self.backbone.eval()
+        self._set_mode('val')
         for batch in dataset:
             for k in batch:
                 batch[k] = batch[k].to(self.device)
-
             with torch.no_grad():
-                pred = self.model(
-                    observed_data=batch["observed_data"],
-                    tp_to_predict=batch["tp_to_predict"],
-                    observed_tp=batch.get("observed_tp", None),
-                    future_features=batch.get("future_features", None),
-                )
-                loss = self.train_loss_fn(pred, batch["future_data"])
-
+                # get target
+                x = batch.pop("future_data")
+                loss = self.diffusion.get_loss(x, condition=batch)
                 test_loss += loss
         return test_loss / len(dataset)
 
     def test(self, dataset, n_sample=50):
-        self.diffusion.backbone.eval()
-        if self.diffusion.conditioner is not None:
-            self.diffusion.conditioner.eval()
+        self._set_mode('val')
         y_pred, y_real = [], []
         for batch in dataset:
             for k in batch:
@@ -200,3 +192,17 @@ class Trainer:
         #     y_pred = y_pred * std[target] + mean[target]
 
         return y_pred, y_real
+    
+    
+    def _set_mode(self, mode):
+        if mode == 'train':
+            self.diffusion.backbone.train()
+            if self.diffusion.conditioner is not None:
+                self.diffusion.conditioner.train()
+        elif mode == 'val':
+            self.diffusion.backbone.eval()
+            if self.diffusion.conditioner is not None:
+                self.diffusion.conditioner.eval()
+        else:
+            raise ValueError('no such mode!')
+            

@@ -233,7 +233,7 @@ class MovingAvgDiffusion(BaseDiffusion):
             if self.freq_kw["frequency"]:
                 prev_value = condition["observed_data"][:, [0], :]
                 prev_value = prev_value + torch.randn(1, device=x.device) * prev_value.max() * 0.1
-                noise = torch.concat([prev_value, torch.zeros(x.shape[0], x.shape[1]-1, x.shape[2])], dim=1)
+                noise = torch.concat([prev_value, torch.zeros(x.shape[0], x.shape[1]-1, x.shape[2], device=x.device)], dim=1)
                 
                 
             else:

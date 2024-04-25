@@ -24,18 +24,16 @@ print("Using: ", device)
 
 def main(args, n):
     data_fn = getattr(dataset, args.dataset)
-    train_dl, test_dl, CONFIG, ct = data_fn()
+    train_dl, val_dl, test_dl, CONFIG, ct = data_fn(args.setting)
 
     bb = getattr(backbone, CONFIG["backbone"])
     cn = getattr(conditioner, CONFIG["conditioner"], None)
     df = getattr(diffusion, CONFIG["diffusion"])
 
-    freq_kw = CONFIG["diff_config"]["freq_kw"]
-
     save_folder = os.path.join(
         root_pth,
         args.dataset,
-        f'diff{CONFIG["diffusion"]}_freq{freq_kw['frequency']}_bb{CONFIG["backbone"]}_cn{CONFIG["conditioner"]}_{n}',
+        f"{args.setting}_{n}",
     )
     os.makedirs(save_folder, exist_ok=True)
 
@@ -92,17 +90,19 @@ def main(args, n):
         optimizer=torch.optim.Adam(params, lr=CONFIG["train_config"]["lr"]),
         device=device,
         output_pth=save_folder,
-        # train_loss_fn=torch.nn.MSELoss(reduction="mean"),
         **CONFIG["train_config"],
     )
-    trainer.train(train_dl)
+    trainer.train(train_dl, val_dl)
+    trainer.train(val_dl, epochs=10)
     results = trainer.test(test_dl)
-    torch.save((results, ct), os.path.join(save_folder, 'results.pt'))
+    torch.save((results, ct), os.path.join(save_folder, "results.pt"))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--dataset", type=str, default="mfred")
     parser.add_argument("-n", "--num_train", type=int, default=5)
+    parser.add_argument("-s", "--setting", type=str, default="mfred")
     args = parser.parse_args()
 
     for i in range(args.num_train):

@@ -1,25 +1,27 @@
 data_config:
-  target: value
+  target: power
   n_in: 288
   n_out: 288
   shift: 0
   col_in: 
-    - value
+    - power
   col_out: 
-    - t2m
+    - u100
+    - v100
   batch_size: 128
   scale: on
 
-# backbone: ResNetBackbone
-backbone: MLPBackbone
+backbone: ResNetBackbone
 bb_config:
   hidden_size: 128
   n_layers: 5
+
 
 conditioner: MLPConditioner
 cn_config:
   hidden_size: 128
   latent_dim: 128
+
 
 diffusion: MovingAvgDiffusion
 diff_config:
@@ -30,5 +32,6 @@ diff_config:
 
 
 train_config:
-  epochs: 300
-  lr: 1.0e-4
+  epochs: 150
+  lr: 2.0e-4
+  early_stop: 5

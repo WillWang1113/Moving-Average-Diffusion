@@ -11,8 +11,7 @@ data_config:
   batch_size: 128
   scale: on
 
-backbone: ResNetBackbone
-# backbone: MLPBackbone
+backbone: MLPBackbone
 bb_config:
   hidden_size: 128
   n_layers: 5
@@ -27,11 +26,12 @@ cn_config:
 diffusion: MovingAvgDiffusion
 diff_config:
   freq_kw: 
-    frequency: off
+    frequency: on
     stereographic: off
   seq_length: 288
 
 
 train_config:
-  epochs: 300
-  lr: 1.0e-4
+  epochs: 150
+  lr: 2.0e-4
+  early_stop: 5
