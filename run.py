@@ -1,9 +1,11 @@
 import argparse
 import os
 import random
+import time
 
 import numpy as np
 import torch
+import pickle
 
 from src.datamodule import dataset
 from src.models import backbone, conditioner, diffusion
@@ -24,7 +26,7 @@ print("Using: ", device)
 
 def main(args, n):
     data_fn = getattr(dataset, args.dataset)
-    train_dl, val_dl, test_dl, CONFIG, ct = data_fn(args.setting)
+    train_dl, val_dl, test_dl, CONFIG, scaler = data_fn(args.setting)
 
     bb = getattr(backbone, CONFIG["backbone"])
     cn = getattr(conditioner, CONFIG["conditioner"], None)
@@ -87,15 +89,25 @@ def main(args, n):
 
     trainer = Trainer(
         diffusion=diff,
-        optimizer=torch.optim.Adam(params, lr=CONFIG["train_config"]["lr"]),
+        params = params,
         device=device,
         output_pth=save_folder,
         **CONFIG["train_config"],
     )
     trainer.train(train_dl, val_dl)
     trainer.train(val_dl, epochs=10)
-    results = trainer.test(test_dl)
-    torch.save((results, ct), os.path.join(save_folder, "results.pt"))
+    results = trainer.test(test_dl, scaler=scaler)
+    print('Finish testing! Begain saving!')
+    
+    if os.path.isfile(os.path.join(root_pth, args.dataset, 'y_real.npy')):
+        print('y_test is exist! only save y_pred')
+        with open(os.path.join(save_folder, "y_pred.npy"), 'wb') as f:
+            np.save(f, results[0])
+    else:
+        with open(os.path.join(save_folder, "y_pred.npy"), 'wb') as f:
+            np.save(f, results[0])
+        with open(os.path.join(root_pth, args.dataset, 'y_real.npy'), 'wb') as f:
+            np.save(f, results[1])
 
 
 if __name__ == "__main__":

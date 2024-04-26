@@ -1,4 +1,5 @@
 #!/bin/bash
+rm -rf runs/
 
 python run.py -d mfred -s mfred_cnn_freq
 python run.py -d mfred -s mfred_cnn_time

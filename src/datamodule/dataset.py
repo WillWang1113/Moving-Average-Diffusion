@@ -60,7 +60,7 @@ def syntheic_sine(t_steps=4000, batch_size=128, freq_kw=None):
     return train_dl, test_dl
 
 
-def mfred(setting='mfred'):
+def mfred(setting="mfred"):
     df = pd.read_csv(
         os.path.join(root_pth, "MFRED_clean.csv"), index_col=0, parse_dates=True
     )
@@ -81,6 +81,16 @@ def mfred(setting='mfred'):
     if data_config["scale"]:
         ct = ct.fit(train_df)
         df = ct.transform(df)
+        y_scaler = {
+            "data": (
+                ct.named_transformers_["numbers"].mean_,
+                ct.named_transformers_["numbers"].scale_,
+            ),
+            "target": data_config["cols"].index(data_config["target"]),
+        }
+    else:
+        y_scaler = None
+
     # Slide the total window
     window_width = data_config["shift"] + data_config["n_out"] + data_config["n_in"]
     windows = np.lib.stride_tricks.sliding_window_view(df, window_width, axis=0)
@@ -101,15 +111,14 @@ def mfred(setting='mfred'):
         train_ds,
         batch_size=data_config["batch_size"],
         shuffle=True,
-        num_workers=4,
         pin_memory=True,
     )
-    val_dl = DataLoader(val_ds, batch_size=data_config["batch_size"])
+    val_dl = DataLoader(val_ds, batch_size=data_config["batch_size"], pin_memory=True,)
     test_dl = DataLoader(test_ds, batch_size=data_config["batch_size"], shuffle=False)
-    return train_dl, val_dl, test_dl, CONFIG, ct
+    return train_dl, val_dl, test_dl, CONFIG, y_scaler
 
 
-def nrel(setting='nrel'):
+def nrel(setting="nrel"):
     df = pd.read_csv(
         os.path.join(root_pth, "nrel_clean.csv"), index_col=0, parse_dates=True
     )
@@ -127,6 +136,15 @@ def nrel(setting='nrel'):
     if data_config["scale"]:
         ct = ct.fit(train_df)
         df = ct.transform(df)
+        y_scaler = {
+            "data": (
+                ct.named_transformers_["numbers"].mean_,
+                ct.named_transformers_["numbers"].scale_,
+            ),
+            "target": data_config["cols"].index(data_config["target"]),
+        }
+    else:
+        y_scaler = None
 
     # Slide the total window
     window_width = data_config["shift"] + data_config["n_out"] + data_config["n_in"]
@@ -146,9 +164,8 @@ def nrel(setting='nrel'):
         train_ds,
         batch_size=data_config["batch_size"],
         shuffle=True,
-        num_workers=4,
         pin_memory=True,
     )
-    val_dl = DataLoader(val_ds, batch_size=data_config["batch_size"])
+    val_dl = DataLoader(val_ds, batch_size=data_config["batch_size"], pin_memory=True,)
     test_dl = DataLoader(test_ds, batch_size=data_config["batch_size"], shuffle=False)
-    return train_dl, val_dl, test_dl, CONFIG, ct
+    return train_dl, val_dl, test_dl, CONFIG, y_scaler
