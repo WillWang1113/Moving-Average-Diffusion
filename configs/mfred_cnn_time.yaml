@@ -10,21 +10,19 @@ data_config:
   batch_size: 128
   scale: on
 
-backbone: ResNetBackbone
+backbone: UNetBackbone
 bb_config:
-  hidden_size: 128
-  n_layers: 5
+  hidden_size: 32
 
 conditioner: MLPConditioner
 cn_config:
-  hidden_size: 128
+  hidden_size: 256
   latent_dim: 128
 
 diffusion: MovingAvgDiffusion
 diff_config:
   freq_kw: 
     frequency: off
-    stereographic: off
   seq_length: 288
 
 

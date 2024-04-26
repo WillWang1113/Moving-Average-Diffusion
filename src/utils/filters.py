@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 
+from src.utils.fourier import complex_freq_to_real_imag, real_imag_to_complex_freq
+
 
 def get_factors(n):
     f = list(
@@ -49,13 +51,13 @@ class MovingAvgTime(nn.Module):
 
     def forward(self, x: torch.Tensor):
         orig_size = x.shape[1]
-        
+
         # front = x[:, 0:1, :].repeat(1, self.kernel_size // 2, 1)
         # end = x[:, -1:, :].repeat(1, self.kernel_size - 1 - self.kernel_size // 2, 1)
         # x = torch.cat([front, x, end], dim=1)
-        
+
         x = self.avg(x.permute(0, 2, 1))
-        x = nn.functional.interpolate(x, size=orig_size, mode='linear')
+        x = nn.functional.interpolate(x, size=orig_size, mode="linear")
         x = x.permute(0, 2, 1)
         return x
 
@@ -76,7 +78,6 @@ class MovingAvgFreq(torch.nn.Module):
         self.Hw = Hw.reshape(1, -1, 1)
 
     def forward(self, x: torch.Tensor):
-        n_real = x.shape[1] // 2
-        x_complex = torch.complex(x[:, :n_real, :], x[:, n_real:, :]).to(x.device)
+        x_complex = real_imag_to_complex_freq(x)
         x_filtered = x_complex * self.Hw.to(x.device)
-        return torch.concat([x_filtered.real, x_filtered.imag], dim=1)
+        return complex_freq_to_real_imag(x_filtered, x.shape[1])

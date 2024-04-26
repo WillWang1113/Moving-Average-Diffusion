@@ -27,6 +27,10 @@ print("Using: ", device)
 def main(args, n):
     data_fn = getattr(dataset, args.dataset)
     train_dl, val_dl, test_dl, CONFIG, scaler = data_fn(args.setting)
+    n_sample = 50
+    if args.test:
+        CONFIG["train_config"]['epochs'] = 1
+        n_sample = 10
 
     bb = getattr(backbone, CONFIG["backbone"])
     cn = getattr(conditioner, CONFIG["conditioner"], None)
@@ -52,6 +56,7 @@ def main(args, n):
         batch["future_features"].shape[1],
         batch["future_features"].shape[2],
     )
+    print()
 
     print("\n")
     print("MODEL PARAM:")
@@ -96,7 +101,7 @@ def main(args, n):
     )
     trainer.train(train_dl, val_dl)
     trainer.train(val_dl, epochs=10)
-    results = trainer.test(test_dl, scaler=scaler)
+    results = trainer.test(test_dl, scaler=scaler, n_sample=n_sample)
     print('Finish testing! Begain saving!')
     
     if os.path.isfile(os.path.join(root_pth, args.dataset, 'y_real.npy')):
@@ -115,7 +120,8 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--dataset", type=str, default="mfred")
     parser.add_argument("-n", "--num_train", type=int, default=5)
     parser.add_argument("-s", "--setting", type=str, default="mfred")
+    parser.add_argument("-t", "--test", action='store_true')
     args = parser.parse_args()
-
-    for i in range(args.num_train):
+    n = 1 if args.test else args.num_train
+    for i in range(n):
         main(args, i)

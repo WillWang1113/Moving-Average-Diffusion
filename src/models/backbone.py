@@ -23,7 +23,7 @@ class MLPBackbone(nn.Module):
         seq_channels: int,
         seq_length: int,
         hidden_size: int,
-        n_layers: int = 3,
+        n_layers: int = 3, **kwargs
     ) -> None:
         """
         * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
@@ -125,7 +125,7 @@ class ResNetBackbone(nn.Module):
     ) -> None:
         super().__init__()
         self.block1 = ResidualBlock(seq_channels, hidden_size, hidden_size)
-        self.block2 = Downsample(hidden_size)
+        # self.block2 = Downsample(hidden_size)
         self.block3 = ResidualBlock(hidden_size, hidden_size, hidden_size)
         self.fc_out = MLP(hidden_size * (seq_length // 2), [seq_channels * seq_length])
         self.time_emb = SinusoidalPosEmb(hidden_size)
@@ -137,7 +137,7 @@ class ResNetBackbone(nn.Module):
         t = t + condition
         x = x.permute(0, 2, 1)
         x = self.block1(x, t)
-        x = self.block2(x, t)
+        # x = self.block2(x, t)
         x = self.block3(x, t)
         x = self.fc_out(x.flatten(1)).reshape(-1, self.seq_length, self.seq_channels)
         return x
@@ -151,10 +151,10 @@ class UNetBackbone(nn.Module):
     def __init__(
         self,
         seq_channels: int,
-        latent_channels: int = 64,
+        hidden_size: int = 64,
         ch_mults: Union[Tuple[int, ...], List[int]] = (1, 2, 4),
-        is_attn: Union[Tuple[bool, ...], List[bool]] = (False, False, True),
-        n_blocks: int = 2,
+        is_attn: Union[Tuple[bool, ...], List[bool]] = (False, False, False),
+        n_blocks: int = 1, **kwargs
     ):
         """
         * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
@@ -170,16 +170,16 @@ class UNetBackbone(nn.Module):
 
         # Project time series into feature map
         self.ts_proj = nn.Conv1d(
-            seq_channels, latent_channels, kernel_size=3, padding=1
+            seq_channels, hidden_size, kernel_size=3, padding=1
         )
 
         # Time embedding layer. Time embedding has `n_channels * 4` channels
-        self.time_emb = SinusoidalPosEmb(latent_channels * 4)
+        self.time_emb = SinusoidalPosEmb(hidden_size * 4)
 
         # #### First half of U-Net - decreasing resolution
         down = []
         # Number of channels
-        out_channels = in_channels = latent_channels
+        out_channels = in_channels = hidden_size
         # For each resolution
         for i in range(n_resolutions):
             # Number of output channels at this resolution
@@ -188,7 +188,7 @@ class UNetBackbone(nn.Module):
             for _ in range(n_blocks):
                 down.append(
                     DownBlock(
-                        in_channels, out_channels, latent_channels * 4, is_attn[i]
+                        in_channels, out_channels, hidden_size * 4, is_attn[i]
                     )
                 )
                 in_channels = out_channels
@@ -202,7 +202,7 @@ class UNetBackbone(nn.Module):
         # Middle block
         self.middle = MiddleBlock(
             out_channels,
-            latent_channels * 4,
+            hidden_size * 4,
         )
 
         # #### Second half of U-Net - increasing resolution
@@ -215,12 +215,12 @@ class UNetBackbone(nn.Module):
             out_channels = in_channels
             for _ in range(n_blocks):
                 up.append(
-                    UpBlock(in_channels, out_channels, latent_channels * 4, is_attn[i])
+                    UpBlock(in_channels, out_channels, hidden_size * 4, is_attn[i])
                 )
             # Final block to reduce the number of channels
             out_channels = in_channels // ch_mults[i]
             up.append(
-                UpBlock(in_channels, out_channels, latent_channels * 4, is_attn[i])
+                UpBlock(in_channels, out_channels, hidden_size * 4, is_attn[i])
             )
             in_channels = out_channels
             # Up sample at all resolutions except last

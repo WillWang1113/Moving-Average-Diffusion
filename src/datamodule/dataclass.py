@@ -57,8 +57,8 @@ class TimeSeries(Dataset):
 
         # # ! test!
         if freq_kw["frequency"]:
-            self.his_data = dft(self.his_data, freq_kw["stereographic"])
-            self.fc_data = dft(self.fc_data, freq_kw["stereographic"])
+            self.his_data = dft(self.his_data)
+            self.fc_data = dft(self.fc_data)
 
     def __len__(self):
         return len(self.fc_data)

@@ -93,8 +93,10 @@ class Trainer:
 
     def train(self, train_dataloader, val_dataloader=None, epochs: int = None):
         if self.train_counter >= 1:
-            print('Finetuning!')            
-            self.optimizer = torch.optim.Adam(params=self.diffusion.get_params(), lr=self.lr)
+            print("Finetuning!")
+            self.optimizer = torch.optim.Adam(
+                params=self.diffusion.get_params(), lr=self.lr / 2
+            )
         E = epochs if epochs is not None else self.epochs
         # torch.save(self.model, self.output_pth)
         for e in tqdm(range(E), ncols=50):
@@ -157,7 +159,7 @@ class Trainer:
                 test_loss += loss
         return test_loss / len(dataset)
 
-    def test(self, test_dataloader, n_sample=30, scaler=None):
+    def test(self, test_dataloader, n_sample=50, scaler=None):
         self._set_mode("val")
         y_pred, y_real = [], []
         for batch in test_dataloader:
@@ -169,7 +171,7 @@ class Trainer:
             s = self.diffusion.backward(noise, batch)
             samples = s.reshape((n_sample, target.shape[0], *s.shape[1:]))
             if self.diffusion.freq_kw["frequency"]:
-                target = idft(target, self.diffusion.freq_kw["stereographic"])
+                target = idft(target)
             y_pred.append(samples.detach().cpu())
             y_real.append(target.detach().cpu())
         y_pred = torch.concat(y_pred, dim=1)

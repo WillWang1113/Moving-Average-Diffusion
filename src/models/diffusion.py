@@ -36,7 +36,7 @@ class DDPM(BaseDiffusion):
         self,
         backbone: nn.Module,
         conditioner: BaseConditioner = None,
-        freq_kw={"frequency": False, "stereographic": False},
+        freq_kw={"frequency": False},
         T=100,
         min_beta=1e-4,
         max_beta=2e-2,
@@ -86,7 +86,7 @@ class DDPM(BaseDiffusion):
             x = mu_pred + sigma * z
 
         if self.freq_kw["frequency"]:
-            x = idft(x, self.freq_kw["stereographic"])
+            x = idft(x)
 
         return x
 
@@ -145,7 +145,7 @@ class MovingAvgDiffusion(BaseDiffusion):
         seq_length: int,
         backbone: nn.Module,
         conditioner: nn.Module = None,
-        freq_kw={"frequency": False, "stereographic": False},
+        freq_kw={"frequency": False},
         device="cpu",
     ) -> None:
         self.backbone = backbone.to(device)
@@ -211,8 +211,8 @@ class MovingAvgDiffusion(BaseDiffusion):
             # x_ts.append(x)
 
         if self.freq_kw["frequency"]:
-            x = idft(x, self.freq_kw["stereographic"])
-            # x_ts = [idft(x_t, self.freq_kw["stereographic"]) for x_t in x_ts]
+            x = idft(x)
+            # x_ts = [idft(x_t) for x_t in x_ts]
 
         return x
         # return torch.stack(x_ts, dim=-1)
