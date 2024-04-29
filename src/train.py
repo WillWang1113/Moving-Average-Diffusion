@@ -22,7 +22,7 @@ class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
 
     def __init__(
-        self, patience=7, verbose=False, delta=0, path="checkpoint.pt", trace_func=print
+        self, patience=5, verbose=False, delta=0, path="checkpoint.pt", trace_func=print
     ):
         self.patience = patience
         self.verbose = verbose
@@ -113,8 +113,10 @@ class Trainer:
                 loss = self.diffusion.get_loss(x, condition=batch)
 
                 train_loss += loss
-                for p in self.diffusion.backbone.parameters():
-                    loss += 0.5 * self.alpha * (p * p).sum()
+                
+                if self.alpha > 0:
+                    for p in self.diffusion.backbone.parameters():
+                        loss += 0.5 * self.alpha * (p * p).sum()
 
                 # Backpropagation
                 self.optimizer.zero_grad(set_to_none=True)

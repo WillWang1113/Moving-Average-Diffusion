@@ -251,7 +251,8 @@ class MovingAvgDiffusion(BaseDiffusion):
             # ! just for test !
             # ! use observed last !
             if self.freq_kw["frequency"]:
-                time_value = idft(condition["observed_data"])
+                time_value = condition["observed_data"]
+                # time_value = idft(condition["observed_data"])
 
                 # ortho norm: factor of sqrt(seq_len)
                 prev_value = time_value[:, [-1], :] * torch.sqrt(

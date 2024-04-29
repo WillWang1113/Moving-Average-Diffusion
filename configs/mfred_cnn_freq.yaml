@@ -10,9 +10,9 @@ data_config:
   batch_size: 128
   scale: on
 
-backbone: UNetBackbone
+backbone: ResNetBackbone
 bb_config:
-  hidden_size: 32
+  hidden_size: 128
 
 conditioner: MLPConditioner
 cn_config:

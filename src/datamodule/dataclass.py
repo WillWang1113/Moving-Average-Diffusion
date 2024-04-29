@@ -57,7 +57,7 @@ class TimeSeries(Dataset):
 
         # # ! test!
         if freq_kw["frequency"]:
-            self.his_data = dft(self.his_data)
+            # self.his_data = dft(self.his_data)
             self.fc_data = dft(self.fc_data)
 
     def __len__(self):

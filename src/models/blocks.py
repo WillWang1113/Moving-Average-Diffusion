@@ -3,6 +3,41 @@ import torch
 from typing import Optional
 
 
+class ResBlk(nn.Module):
+
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(in_channels,
+                      out_channels,
+                      kernel_size=3,
+                      padding=1), nn.BatchNorm1d(out_channels), nn.LeakyReLU())
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(out_channels,
+                      out_channels,
+                      kernel_size=3,
+                      padding=1), nn.BatchNorm1d(out_channels))
+        self.relu = nn.LeakyReLU()
+        self.out_channels = out_channels
+        if in_channels != out_channels:
+            self.shortcut = nn.Conv1d(in_channels, out_channels, kernel_size=1)
+        else:
+            self.shortcut = nn.Identity()
+
+    def forward(self, x):
+        residual = x
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out += self.shortcut(residual)
+        out = self.relu(out)
+        return out
+
+
+
+
+
+
+
 class ResidualBlock(nn.Module):
     """
     ### Residual block

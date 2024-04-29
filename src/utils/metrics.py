@@ -19,7 +19,7 @@ def crps(y_pred, y_real, sample_weight=None):
     return np.average(per_obs_crps, weights=sample_weight)
 
 
-def mae(y_pred, y_real, normalize=True):
+def mae(y_pred, y_real, normalize=False):
     y_pred_point = np.median(y_pred, axis=0)
     scale = np.mean(np.abs(y_real)) if normalize else 1
     return np.mean(np.abs(y_pred_point - y_real)) / scale
@@ -30,15 +30,15 @@ def mse(y_pred, y_real):
     return np.mean((y_pred_point - y_real) ** 2)
 
 
-def rmse(y_pred, y_real, normalize=True):
+def rmse(y_pred, y_real, normalize=False):
     y_pred_point = np.median(y_pred, axis=0)
     MSE = np.mean((y_pred_point - y_real) ** 2)
     scale = np.mean(np.abs(y_real)) if normalize else 1
     return np.sqrt(MSE) / scale
 
 
-def calculate_metrics(y_pred, y_real):
-    NRMSE = rmse(y_pred, y_real)
-    MAE = mae(y_pred, y_real)
+def calculate_metrics(y_pred, y_real, normalize=False):
+    NRMSE = rmse(y_pred, y_real, normalize)
+    MAE = mae(y_pred, y_real, normalize)
     CRPS = crps(y_pred, y_real)
     return (NRMSE, MAE, CRPS)

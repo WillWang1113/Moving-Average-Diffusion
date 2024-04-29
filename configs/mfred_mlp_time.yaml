@@ -13,7 +13,7 @@ data_config:
 backbone: MLPBackbone
 bb_config:
   hidden_size: 128
-  n_layers: 5
+  n_layers: 10
 
 conditioner: MLPConditioner
 cn_config:

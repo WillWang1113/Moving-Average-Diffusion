@@ -10,10 +10,10 @@ data_config:
   batch_size: 128
   scale: on
 
-backbone: MLPBackbone
+backbone: FreqLinear
 bb_config:
   hidden_size: 128
-  n_layers: 10
+  n_layer: 5
 
 conditioner: MLPConditioner
 cn_config:
@@ -23,7 +23,7 @@ cn_config:
 diffusion: MovingAvgDiffusion
 diff_config:
   freq_kw: 
-    frequency: on
+    frequency: off
   seq_length: 288
 
 

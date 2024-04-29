@@ -1,11 +1,9 @@
 import argparse
 import os
 import random
-import time
 
 import numpy as np
 import torch
-import pickle
 
 from src.datamodule import dataset
 from src.models import backbone, conditioner, diffusion
@@ -39,7 +37,7 @@ def main(args, n):
     save_folder = os.path.join(
         root_pth,
         args.dataset,
-        f"{args.setting}_{n}",
+        f"{args.setting}_{'t' if args.test else n}"
     )
     os.makedirs(save_folder, exist_ok=True)
 
@@ -56,7 +54,6 @@ def main(args, n):
         batch["future_features"].shape[1],
         batch["future_features"].shape[2],
     )
-    print()
 
     print("\n")
     print("MODEL PARAM:")
@@ -100,7 +97,7 @@ def main(args, n):
         **CONFIG["train_config"],
     )
     trainer.train(train_dl, val_dl)
-    trainer.train(val_dl, epochs=10)
+    # trainer.train(val_dl, epochs=)
     results = trainer.test(test_dl, scaler=scaler, n_sample=n_sample)
     print('Finish testing! Begain saving!')
     

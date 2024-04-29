@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler
-import torch
 import yaml
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
