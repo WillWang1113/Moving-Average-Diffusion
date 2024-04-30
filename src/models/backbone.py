@@ -116,8 +116,11 @@ class FreqLinear(torch.nn.Module):
         #     self.freq_kernel_up.append(ComplexRELU())
 
         self.linear = torch.nn.Linear(
-            hidden_out_channel * freq_out_channel, rfft_len * seq_channels
+            hidden_out_channel * freq_out_channel, hidden_size
         ).to(torch.cfloat)
+        self.linear_out = torch.nn.Linear(hidden_size, rfft_len * seq_channels).to(
+            torch.cfloat
+        )
         self.pe = SinusoidalPosEmb(hidden_size)
         self.rfft_len = rfft_len
         self.seq_channels = seq_channels
@@ -126,7 +129,7 @@ class FreqLinear(torch.nn.Module):
         t = self.pe(t)
         t = t + condition  # [bs, kernelsize]
         x = self.embedder(x)  # [bs, seq_len, hidden_size]
-        x = x + t.unsqueeze(1)
+        # x = x + t.unsqueeze(1)
 
         x = torch.fft.rfft(x, norm="ortho", dim=1)  # [bs, rfft_len, hidden_size]
         x = self.freq_kernel(x.permute(0, 2, 1)).permute(
@@ -135,7 +138,9 @@ class FreqLinear(torch.nn.Module):
         x = self.channel_kernel(x)  # [bs, rfft_len, kernel_size]
 
         # x = self.linear(x)  # [bs, rfft_len, dim]
-        x = self.linear(x.flatten(1)).reshape(
+        x = self.linear(x.flatten(1))
+        x = x+t
+        x = self.linear_out(x).reshape(
             -1, self.rfft_len, self.seq_channels
         )  # [bs, rfft_len, dim]
         x = torch.fft.irfft(x, norm="ortho", dim=1)

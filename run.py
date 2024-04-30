@@ -27,7 +27,7 @@ def main(args, n):
     train_dl, val_dl, test_dl, CONFIG, scaler = data_fn(args.setting)
     n_sample = 50
     if args.test:
-        CONFIG["train_config"]['epochs'] = 1
+        CONFIG["train_config"]['epochs'] = 5
         n_sample = 10
 
     bb = getattr(backbone, CONFIG["backbone"])
@@ -40,7 +40,10 @@ def main(args, n):
         f"{args.setting}_{'t' if args.test else n}"
     )
     os.makedirs(save_folder, exist_ok=True)
-
+    
+    with open(os.path.join(root_pth, args.dataset, 'scaler.npy'), 'wb') as f:
+        np.save(f, scaler)
+    torch.save(test_dl, os.path.join(root_pth, args.dataset, 'test_dl.pt'))
     batch = next(iter(train_dl))
     seq_length, seq_channels = (
         batch["observed_data"].shape[1],
@@ -97,7 +100,6 @@ def main(args, n):
         **CONFIG["train_config"],
     )
     trainer.train(train_dl, val_dl)
-    # trainer.train(val_dl, epochs=)
     results = trainer.test(test_dl, scaler=scaler, n_sample=n_sample)
     print('Finish testing! Begain saving!')
     

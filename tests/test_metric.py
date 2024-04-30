@@ -1,11 +1,7 @@
 import random
-import torch
 import matplotlib.pyplot as plt
 import os
-import glob
 import numpy as np
-from src.utils.fourier import idft
-from src.utils.filters import get_factors
 from src.utils.metrics import calculate_metrics
 import pandas as pd
 
@@ -17,11 +13,11 @@ with open(os.path.join(root_path, "y_real.npy"), "rb") as f:
 exp_dirs = [
     # f"{dataset}_cnn_freq",
     # f"{dataset}_cnn_time",
-    # f"{dataset}_mlp_freq",
-    # f"{dataset}_mlp_time",
-    f"{dataset}_freqlinear_freq",
+    f"{dataset}_mlp_freq",
+    f"{dataset}_mlp_time",
+    f"{dataset}_freqlinear_time",
 ]
-num_training = 1
+num_training = 5
 # exp_dirs = os.listdir(root_path)
 # exp_dirs.sort()
 
@@ -31,17 +27,16 @@ for d in exp_dirs:
     print(d)
     avg_m = []
     for i in range(num_training):
+        # i = 't'
         read_d = os.path.join(root_path, d + f"_{i}", "y_pred.npy")
         with open(read_d, "rb") as f:
             y_pred = np.load(f)
+
         # y_pred = np.transpose(y_pred, (1,2,3,0))
         m = calculate_metrics(y_pred, y_real)
         avg_m.append(m)    
         n_sample, bs, ts, dims = y_pred.shape
 
-        # # sample_pred = y_pred[:, 0, :, 0, ii]
-        # print(sample_real.shape)
-        # print(sample_pred.shape)
         fig, ax = plt.subplots(2,2)
         ax = ax.flatten()
         for k in range(4):
@@ -50,6 +45,7 @@ for d in exp_dirs:
             choose = np.random.randint(0, bs)
             sample_real = y_real[choose,:,0]
             sample_pred = y_pred[:, choose, :, 0].T
+            # ax[k].scatter(sample_pred[:,2], sample_pred[:,5])
             ax[k].plot(sample_real, label="real")
             ax[k].legend()
             ax[k].plot(sample_pred, c="black", alpha=1 / n_sample)

@@ -44,10 +44,10 @@ class MovingAvgTime(nn.Module):
     Moving average block to highlight the trend of time series, only for factors kernal size
     """
 
-    def __init__(self, kernel_size):
+    def __init__(self, kernel_size, stride=1):
         super(MovingAvgTime, self).__init__()
         self.kernel_size = kernel_size
-        self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=kernel_size)
+        self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride)
 
     def forward(self, x: torch.Tensor):
         orig_size = x.shape[1]

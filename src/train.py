@@ -1,6 +1,5 @@
 import torch
 import os
-import matplotlib.pyplot as plt
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -113,7 +112,7 @@ class Trainer:
                 loss = self.diffusion.get_loss(x, condition=batch)
 
                 train_loss += loss
-                
+
                 if self.alpha > 0:
                     for p in self.diffusion.backbone.parameters():
                         loss += 0.5 * self.alpha * (p * p).sum()
@@ -201,50 +200,49 @@ class Trainer:
             raise ValueError("no such mode!")
 
 
-# class Sampler:
-#     def __init__(
-#         self, diffusion, n_sample: int, scaler, device: str, freq_kw: dict
-#     ) -> None:
-#         self.diffusion = diffusion
-#         self.n_sample = n_sample
-#         self.device = device
-#         self.scaler = scaler
-#         self.freq_kw = freq_kw
+class Sampler:
+    def __init__(self, diffusion: BaseDiffusion, n_sample: int, scaler) -> None:
+        self.diffusion = diffusion
+        self.n_sample = n_sample
+        self.device = diffusion.get_params()[0].device
+        self.scaler = scaler
+        self.freq_kw = diffusion.freq_kw
 
-#     def sample(self, test_dataloader):
-#         self._set_mode("val")
-#         y_pred, y_real = [], []
-#         for batch in test_dataloader:
-#             for k in batch:
-#                 batch[k] = batch[k].to(self.device)
-#             target = batch.pop("future_data")
-#             # target_shape = target.shape
-#             noise = self.diffusion.init_noise(target, batch, self.n_sample)
-#             s = self.diffusion.backward(noise, batch)
-#             samples = s.reshape((self.n_sample, *y_real.shape))
-#             y_pred.append(samples.detach().cpu())
-#             y_real.append(target.detach().cpu())
-#         y_pred = torch.concat(y_pred, dim=1)
-#         y_real = torch.concat(y_real)
-#         if self.freq_kw["frequency"]:
-#             y_real = idft(y_real, self.freq_kw["stereographic"])
+    def sample(self, test_dataloader):
+        self._set_mode("val")
+        y_pred, y_real = [], []
+        for batch in test_dataloader:
+            for k in batch:
+                batch[k] = batch[k].to(self.device)
+            target = batch.pop("future_data")
+            # target_shape = target.shape
+            noise = self.diffusion.init_noise(target, batch, self.n_sample)
+            s = self.diffusion.backward(noise, batch)
+            samples = s.reshape((self.n_sample, target.shape[0], *s.shape[1:]))
 
-#         if self.scaler is not None:
-#             print("--" * 30, "inverse transform", "--" * 30)
-#             mean, std = self.scaler["data"]
-#             target = self.scaler["target"]
-#             y_pred = y_pred * std[target] + mean[target]
-#             y_real = y_real * std[target] + mean[target]
-#         return y_pred, y_real
+            if self.diffusion.freq_kw["frequency"]:
+                target = idft(target)
+            y_pred.append(samples.detach().cpu())
+            y_real.append(target.detach().cpu())
+        y_pred = torch.concat(y_pred, dim=1)
+        y_real = torch.concat(y_real)
 
-#     def _set_mode(self, mode):
-#         if mode == "train":
-#             self.diffusion.backbone.train()
-#             if self.diffusion.conditioner is not None:
-#                 self.diffusion.conditioner.train()
-#         elif mode == "val":
-#             self.diffusion.backbone.eval()
-#             if self.diffusion.conditioner is not None:
-#                 self.diffusion.conditioner.eval()
-#         else:
-#             raise ValueError("no such mode!")
+        if self.scaler is not None:
+            print("--" * 30, "inverse transform", "--" * 30)
+            mean, std = self.scaler["data"]
+            target = self.scaler["target"]
+            y_pred = y_pred * std[target] + mean[target]
+            y_real = y_real * std[target] + mean[target]
+        return y_pred.numpy(), y_real.numpy()
+
+    def _set_mode(self, mode):
+        if mode == "train":
+            self.diffusion.backbone.train()
+            if self.diffusion.conditioner is not None:
+                self.diffusion.conditioner.train()
+        elif mode == "val":
+            self.diffusion.backbone.eval()
+            if self.diffusion.conditioner is not None:
+                self.diffusion.conditioner.eval()
+        else:
+            raise ValueError("no such mode!")
