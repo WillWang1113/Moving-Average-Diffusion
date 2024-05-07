@@ -46,6 +46,7 @@ $$\begin{aligned}
     &= (a \mathbf{\tilde{K}}_t + b) \mathbf{\tilde{x}}_0 + \sqrt{a^2 \beta_t^2 + \sigma_t^2} \epsilon^*, \epsilon^* \sim \mathcal{CN}(0, \mathbf{I}) \\
     & = \mathbf{\tilde{K}}_{t-1}  \mathbf{\tilde{x}}_0 + \beta_{t-1} \tilde{\epsilon}
 \end{aligned}$$
+
 Therefore, we can design:
 $$\begin{cases}
     a \mathbf{\tilde{K}}_t + b = \mathbf{\tilde{K}}_{t-1} \\
