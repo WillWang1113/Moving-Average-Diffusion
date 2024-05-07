@@ -39,7 +39,7 @@ $$\mathbf{\tilde{x}}_t = \mathbf{\tilde{K}}_t  \mathbf{\tilde{x}}_0 + \beta_t \t
 Here, we assume DFTs are all normalized by $\sqrt{1/N}$, $N$ is the sequence length. To unify two domain, we denote the moving average transform as $\mathbf{C}_t$.
 ### Sampling
 The key of reverse process is the design of sampler. 
-$$\mathbf{\tilde{x}}_{t-1} = \sqrt{{\frac{\beta_{t-1}^2 - \sigma_t^2}{\beta_t^2}}} \mathbf{\tilde{x}}_t + \left(\mathbf{\tilde{K}}_{t-1} - \sqrt{{\beta_{t-1}^2 - \frac{\sigma_t^2}{\beta_t^2}}} \mathbf{\tilde{K}}_t\right) \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime, \epsilon^\prime \sim \mathcal{C}\mathcal{N}(0, \mathbf{I})$$
+$$\mathbf{\tilde{x}}_{t-1} = \sqrt{{\frac{\beta_{t-1}^2 - \sigma_t^2}{\beta_t^2}}} \mathbf{\tilde{x}}_t + (\mathbf{\tilde{K}}_{t-1} - \sqrt{{\beta_{t-1}^2 - \frac{\sigma_t^2}{\beta_t^2}}} \mathbf{\tilde{K}}_t) \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime, \epsilon^\prime \sim \mathcal{CN}(0, \mathbf{I})$$
 
 <!-- $$\begin{aligned}
     q(\mathbf{\tilde{x}}_{t-1} | \mathbf{\tilde{x}}_t, \mathbf{\tilde{x}}_0) &= a \mathbf{\tilde{x}}_t + b \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime, \epsilon^\prime \sim \mathcal{C}\mathcal{N}(0, \mathbf{I}) \\
