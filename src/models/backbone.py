@@ -4,6 +4,8 @@ from torch import nn
 from torchvision.ops import MLP
 from .embedding import GaussianFourierProjection, SinusoidalPosEmb
 from .blocks import (
+    CMLP,
+    ComplexRELU,
     ResBlk,
     UpBlock,
     DownBlock,
@@ -24,6 +26,7 @@ class MLPBackbone(nn.Module):
         seq_channels: int,
         seq_length: int,
         hidden_size: int,
+        latent_dim: int,
         n_layers: int = 3,
         **kwargs,
     ) -> None:
@@ -50,30 +53,71 @@ class MLPBackbone(nn.Module):
         )
         self.seq_channals = seq_channels
         self.seq_length = seq_length
+        if hidden_size != latent_dim:
+            self.con_linear = nn.Linear(latent_dim, hidden_size)
+        else:
+            self.con_linear = nn.Identity()
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
         t = self.pe(t)
         x = x + t
         if condition is not None:
-            assert x.shape == condition.shape
-            x = x + condition
+            c = self.con_linear(condition)
+            x = x + c
         for layer in self.net:
             x = x + layer(x)
         x = self.unembedder(x).reshape((-1, self.seq_length, self.seq_channals))
         return x
 
 
-class ComplexRELU(nn.Module):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
 
-    def forward(self, x):
-        return torch.relu(x.real) + 1.0j * torch.relu(x.imag)
+class CMLPBackbone(torch.nn.Module):
+    def __init__(
+        self, seq_channels, seq_length, hidden_size, latent_dim, n_layers=1
+    ) -> None:
+        super().__init__()
+        self.fft_len = seq_length
+        self.embedder = nn.Linear(seq_channels * self.fft_len, hidden_size).to(torch.cfloat)
+        self.unembedder = nn.Linear(hidden_size, seq_channels * self.fft_len).to(torch.cfloat)
+        self.pe = SinusoidalPosEmb(hidden_size)
+        self.net = nn.ModuleList(  # type: ignore
+            [
+                CMLP(
+                    in_channels=hidden_size,
+                    hidden_channels=[hidden_size * 2, hidden_size],
+                    dropout=0.1,
+                )
+                for _ in range(n_layers)
+            ]
+        )
+        
+        self.seq_channals = seq_channels
+        self.seq_length = seq_length
+        if hidden_size != latent_dim:
+            self.con_linear = nn.Linear(latent_dim, hidden_size)
+        else:
+            self.con_linear = nn.Identity()
+
+    def forward(self, x, t: torch.Tensor, condition=None):
+        # Take in ffted data [bs, fft_len, channel]
+        x = self.embedder(x.flatten(1))
+        t = self.pe(t)
+        x = x + t
+        if condition is not None:
+            c = self.con_linear(condition)
+            x = x + c
+        for layer in self.net:
+            x = x + layer(x)
+        x = self.unembedder(x).reshape((-1, self.fft_len, self.seq_channals))
+        # output ffted data [bs, fft_len, channel]
+        return x
 
 
 class FreqLinear(torch.nn.Module):
-    def __init__(self, seq_channels, seq_length, hidden_size, n_layer=1) -> None:
+    def __init__(
+        self, seq_channels, seq_length, hidden_size, latent_dim, n_layer=1
+    ) -> None:
         super().__init__()
         rfft_len = seq_length // 2 + 1
         self.hidden_size = hidden_size
@@ -125,11 +169,19 @@ class FreqLinear(torch.nn.Module):
         self.rfft_len = rfft_len
         self.seq_channels = seq_channels
 
+        if hidden_size != latent_dim:
+            self.con_linear = nn.Linear(latent_dim, hidden_size)
+        else:
+            self.con_linear = nn.Identity()
+
     def forward(self, x, t: torch.Tensor, condition=None):
         t = self.pe(t)
-        t = t + condition  # [bs, kernelsize]
+        if condition is not None:
+            c = self.con_linear(condition)
+            t = t + c  # [bs, hiddensize]
+
         x = self.embedder(x)  # [bs, seq_len, hidden_size]
-        # x = x + t.unsqueeze(1)
+        x = x + t.unsqueeze(1)
 
         x = torch.fft.rfft(x, norm="ortho", dim=1)  # [bs, rfft_len, hidden_size]
         x = self.freq_kernel(x.permute(0, 2, 1)).permute(
@@ -139,16 +191,17 @@ class FreqLinear(torch.nn.Module):
 
         # x = self.linear(x)  # [bs, rfft_len, dim]
         x = self.linear(x.flatten(1))
-        x = x+t
+        # x = x + t
         x = self.linear_out(x).reshape(
             -1, self.rfft_len, self.seq_channels
         )  # [bs, rfft_len, dim]
         x = torch.fft.irfft(x, norm="ortho", dim=1)
+        
         return x
 
 
 class ResNetBackbone(nn.Module):
-    def __init__(self, seq_channels, seq_length, hidden_size, **kwargs) -> None:
+    def __init__(self, seq_channels, seq_length, hidden_size, latent_dim, **kwargs) -> None:
         super().__init__()
         self.block1 = ResidualBlock(seq_channels, hidden_size, hidden_size)
         self.block2 = torch.nn.AvgPool1d(2, 2)
@@ -158,10 +211,17 @@ class ResNetBackbone(nn.Module):
         self.time_emb = SinusoidalPosEmb(hidden_size)
         self.seq_channels = seq_channels
         self.seq_length = seq_length
+        if hidden_size != latent_dim:
+            self.con_linear = nn.Linear(latent_dim, hidden_size)
+        else:
+            self.con_linear = nn.Identity()
+
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition=None):
         t = self.time_emb(t)
-        t = t + condition
+        if condition is not None:
+            c = self.con_linear(condition)
+            t = t + c  # [bs, hiddensize]
         x = x.permute(0, 2, 1)
         x = self.block1(x, t)
         x = self.block2(x)

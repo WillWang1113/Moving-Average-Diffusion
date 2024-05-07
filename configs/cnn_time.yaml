@@ -19,12 +19,17 @@ cn_config:
   hidden_size: 256
   latent_dim: 128
 
+# diffusion: DDPM
 diffusion: MovingAvgDiffusion
 diff_config:
   freq_kw: 
     frequency: off
   seq_length: 288
-
+  noise_kw: 
+    min_beta: 1.0e-4
+    max_beta: 2.0e-2
+  # fast_sample: on
+  only_factor_step: off
 
 train_config:
   epochs: 150

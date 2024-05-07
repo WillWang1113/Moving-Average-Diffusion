@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from typing import Optional
+from typing import Callable, List, Optional
 
 
 class ResBlk(nn.Module):
@@ -33,8 +33,43 @@ class ResBlk(nn.Module):
         return out
 
 
+class ComplexRELU(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+    def forward(self, x):
+        return torch.relu(x.real) + 1.0j * torch.relu(x.imag)
 
 
+class CMLP(nn.Sequential):
+    def __init__(
+        self,
+        in_channels: int,
+        hidden_channels: List[int],
+        norm_layer: Optional[Callable[..., torch.nn.Module]] = None,
+        activation_layer: Optional[Callable[..., torch.nn.Module]] = ComplexRELU,
+        inplace: Optional[bool] = None,
+        bias: bool = True,
+        dropout: float = 0.0,
+    ):
+        # The addition of `norm_layer` is inspired from the implementation of TorchMultimodal:
+        # https://github.com/facebookresearch/multimodal/blob/5dec8a/torchmultimodal/modules/layers/mlp.py
+        params = {} if inplace is None else {"inplace": inplace}
+
+        layers = []
+        in_dim = in_channels
+        for hidden_dim in hidden_channels[:-1]:
+            layers.append(torch.nn.Linear(in_dim, hidden_dim, bias=bias).to(torch.cfloat))
+            if norm_layer is not None:
+                layers.append(norm_layer(hidden_dim))
+            layers.append(activation_layer(**params))
+            # layers.append(torch.nn.Dropout(dropout, **params))
+            in_dim = hidden_dim
+
+        layers.append(torch.nn.Linear(in_dim, hidden_channels[-1], bias=bias).to(torch.cfloat))
+        # layers.append(torch.nn.Dropout(dropout, **params))
+
+        super().__init__(*layers)
 
 
 

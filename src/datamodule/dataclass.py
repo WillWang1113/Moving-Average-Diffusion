@@ -47,18 +47,19 @@ class TimeSeries(Dataset):
         # static_var = None
         fc_target = windows[:, -n_out:, window_target]
 
-        print("observed data shape:\t", hist_var.shape)
-        print("future features shape:\t", future_var.shape)
-        print("forecast target shape:\t", fc_target.shape)
 
         self.his_data = torch.from_numpy(hist_var).float()
         self.future_features = torch.from_numpy(future_var).float()
         self.fc_data = torch.from_numpy(fc_target).float()
 
         # # ! test!
-        if freq_kw["frequency"]:
+        if freq_kw['frequency']:
             # self.his_data = dft(self.his_data)
-            self.fc_data = dft(self.fc_data)
+            self.fc_data = dft(self.fc_data, **freq_kw)
+            
+        print("observed data shape:\t", hist_var.shape)
+        print("future features shape:\t", future_var.shape)
+        print("forecast target shape:\t", fc_target.shape)
 
     def __len__(self):
         return len(self.fc_data)

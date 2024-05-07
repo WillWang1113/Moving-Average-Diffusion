@@ -172,7 +172,7 @@ class Trainer:
             s = self.diffusion.backward(noise, batch)
             samples = s.reshape((n_sample, target.shape[0], *s.shape[1:]))
             if self.diffusion.freq_kw["frequency"]:
-                target = idft(target)
+                target = idft(target, **self.diffusion.freq_kw)
             y_pred.append(samples.detach().cpu())
             y_real.append(target.detach().cpu())
         y_pred = torch.concat(y_pred, dim=1)
@@ -221,7 +221,7 @@ class Sampler:
             samples = s.reshape((self.n_sample, target.shape[0], *s.shape[1:]))
 
             if self.diffusion.freq_kw["frequency"]:
-                target = idft(target)
+                target = idft(target, **self.diffusion.freq_kw)
             y_pred.append(samples.detach().cpu())
             y_real.append(target.detach().cpu())
         y_pred = torch.concat(y_pred, dim=1)

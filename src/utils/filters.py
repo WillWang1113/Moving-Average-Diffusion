@@ -68,7 +68,13 @@ class MovingAvgFreq(torch.nn.Module):
     Moving average block to highlight the trend of time series, only for factors kernal size
     """
 
-    def __init__(self, kernel_size: int, freq: torch.Tensor, sample_rate: float = 1.0):
+    def __init__(
+        self,
+        kernel_size: int,
+        freq: torch.Tensor,
+        sample_rate: float = 1.0,
+        real_imag: bool = True,
+    ):
         super().__init__()
         self.kernel_size = kernel_size
         omega = 2 * torch.pi * freq / sample_rate
@@ -76,8 +82,15 @@ class MovingAvgFreq(torch.nn.Module):
         omega = torch.where(omega == 0, 1e-5, omega)
         Hw = coeff * torch.sin(omega * kernel_size / 2) / torch.sin(omega / 2)
         self.Hw = Hw.reshape(1, -1, 1)
+        self.real_imag = real_imag
 
     def forward(self, x: torch.Tensor):
-        x_complex = real_imag_to_complex_freq(x)
+        if self.real_imag:
+            x_complex = real_imag_to_complex_freq(x)
+        else:
+            x_complex = x
         x_filtered = x_complex * self.Hw.to(x.device)
-        return complex_freq_to_real_imag(x_filtered, x.shape[1])
+        if self.real_imag:
+            x_filtered = complex_freq_to_real_imag(x_filtered, x.shape[1])
+        
+        return x_filtered
