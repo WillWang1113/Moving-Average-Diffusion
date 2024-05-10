@@ -1,7 +1,7 @@
-# FrequencyDiffusion
-The repo for frequency diffusion.
+# MovingAvg Diffusion
+The repo for MovingAvg diffusion.
 
-Authors: Chenxi Wang
+<!-- Authors: Chenxi Wang -->
 
 ## Backgrounds
 ### DDPM
@@ -36,13 +36,16 @@ $$\mathbf{x}_t = \mathbf{K}_t * \mathbf{x}_0 + \beta_t \epsilon, \epsilon  \sim 
 In terms of frequency domain, moving average can be expressed as multiplication with the frequency response $\mathbf{\tilde{K}}_t$:
 $$\mathbf{\tilde{x}}_t = \mathbf{\tilde{K}}_t  \mathbf{\tilde{x}}_0 + \beta_t \tilde{\epsilon}, \tilde{\epsilon}  \sim \mathcal{CN}(0, \mathbf{I})$$
 
-Here, we assume DFTs are all normalized by $\sqrt{1/N}$, $N$ is the sequence length. To unify two domain, we denote the moving average transform as $\mathbf{C}_t$.
+Here, we assume DFTs are all normalized by $\sqrt{1/N}$, $N$ is the sequence length.
 ### Sampling
-The key of reverse process is the design of sampler:
+The key of reverse process is the design of sampler, and here we design a DDIM-type sampling process.
+$$\mathbf{\tilde{x}}_{t-1} = \sqrt{\frac{\beta_{t-1}^2 - \sigma_t^2}{\beta_t^2}} \mathbf{\tilde{x}}_t + \left(\mathbf{\tilde{K}}_{t-1} - \sqrt{\frac{\beta_{t-1}^2 - \sigma_t^2}{\beta_t^2}} \mathbf{\tilde{K}}_t\right) \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime, \epsilon^\prime \sim \mathcal{CN}(0, \mathbf{I})$$
 
-$$\mathbf{\tilde{x}}_{t-1} = \sqrt{\frac{\beta_{t-1}^2 - \sigma_t^2}{\beta_t^2}} \mathbf{\tilde{x}}_t + \left(\mathbf{\tilde{K}}_{t-1} - \sqrt{\beta_{t-1}^2 - \frac{\sigma_t^2}{\beta_t^2}} \mathbf{\tilde{K}}_t\right) \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime, \epsilon^\prime \sim \mathcal{CN}(0, \mathbf{I})$$
+When $\sigma_t = 0$, we have the deterministic sampling schedule:
+$$\frac{\mathbf{\tilde{x}}_{t-1}}{\beta_{t-1}} = \frac{\mathbf{\tilde{x}}_t}{\beta_t}  + \left(\frac{\mathbf{\tilde{K}}_{t-1}}{\beta_{t-1}} - \frac{\mathbf{\tilde{K}}_t}{\beta_t^2}\right) \mathbf{\tilde{x}}_0$$
 
-<!-- $$\begin{aligned}
+<!-- 
+$$\begin{aligned}
     q(\mathbf{\tilde{x}}_{t-1} | \mathbf{\tilde{x}}_t, \mathbf{\tilde{x}}_0) &= a \mathbf{\tilde{x}}_t + b \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime, \epsilon^\prime \sim \mathcal{C}\mathcal{N}(0, \mathbf{I}) \\
     &= a (\mathbf{\tilde{K}}_t \mathbf{\tilde{x}}_0 + \beta_t {\tilde{\epsilon}}) + b \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime \\
     &= (a \mathbf{\tilde{K}}_t + b) \mathbf{\tilde{x}}_0 + a \beta_t {\tilde{\epsilon}}  + \sigma_t \epsilon^\prime \\
@@ -55,8 +58,8 @@ $$\begin{cases}
     a \mathbf{\tilde{K}}_t + b = \mathbf{\tilde{K}}_{t-1} \\
 \sqrt{a^2 \beta_t^2 + \sigma_t^2} = \beta_{t-1}
 \end{cases} \Rightarrow \begin{cases}
-    a = \sqrt{{\beta_{t-1}^2 - \sigma_t^2}/{\beta_t^2}} \\
-    b = \mathbf{\tilde{K}}_{t-1} - \sqrt{{\beta_{t-1}^2 - \sigma_t^2}/{\beta_t^2}} \mathbf{\tilde{K}}_t
+    a = \sqrt{(\beta_{t-1}^2 - \sigma_t^2)/{\beta_t^2}} \\
+    b = \mathbf{\tilde{K}}_{t-1} - \sqrt{(\beta_{t-1}^2 - \sigma_t^2)/{\beta_t^2}} \mathbf{\tilde{K}}_t
 \end{cases}$$ -->
 
 
@@ -77,29 +80,35 @@ $$\begin{cases}
 | mlp_time_700k (FAIL)       | 0.103443 | 0.085088 | 0.073611 |
 | freqlinear_time_60k (FAIL) | 0.107398 | 0.088021 | 0.084010 | -->
 
-### MovingAvg
+### MovingAvg Diffusion
 
-Deterministic sampling (DDIM, $\sigma_t = 0 $)
+Deterministic sampling (DDIM, $\sigma_t = 0$)
 
-| Method       | RMSE     | MAE      | CRPS     |
-| ------------ | -------- | -------- | -------- |
-| cnn_freq_2M  | 0.042480 | 0.032064 | 0.037333 |
-| cnn_time_2M  | 0.077175 | 0.055606 | 0.058438 |
-| mlp_freq_5M  | 0.087949 | 0.065613 | 0.068308 |
-| mlp_time_5M  | 0.070852 | 0.051746 | 0.054352 |
+| Method      | RMSE     | MAE      | CRPS     |
+| ----------- | -------- | -------- | -------- |
+| cnn_freq_2M | 0.042480 | 0.032064 | 0.037333 |
+| cnn_time_2M | 0.077175 | 0.055606 | 0.058438 |
+| mlp_freq_5M | 0.087949 | 0.065613 | 0.068308 |
+| mlp_time_5M | 0.070852 | 0.051746 | 0.054352 |
 
-Stochastic sampling ($\sigma_t > 0 $)
-need extra design
+Stochastic sampling ($\sigma_t > 0$, Linear schedule, [0.01, 0.1])
+
+<!-- 1. small noise level: max = 1e-1 -->
+
+| Method   | RMSE      | MAE      | CRPS     |
+| -------- | --------- | -------- | -------- |
+| cnn_freq | 0.034253  | 0.025336 | 0.030797 |
+| cnn_time | 0.060331  | 0.043948 | 0.046540 |
+| mlp_freq | 0.069998  | 0.051043 | 0.053416 |
+| mlp_time | 0.057428  | 0.041764 | 0.043979 |
 
 
-<!-- | cmlp_freq_5M | 0.074481 | 0.054804 | 0.057391 | -->
-<!-- 
-- [x] DDPM time
-- [x] DDPM freq
-- [x] MovingAvg time ($\beta_t =0$)
-- [x] MovingAvg freq ($\beta_t =0$)
-- [x] MovingAvg time
-- [x] MovingAvg freq
- -->
 
- 
+
+
+## TODO
+- [ ] check the intermediate products (muli-resolution forecasts)
+- [ ] $\sigma_t$ design --> affects diversity
+- [ ] embedding $t$ multiplication
+- [ ] other SOTA forecasting method
+<!-- - [ ] $\beta_t = \mathbf{\tilde{K}}_t$ -->
