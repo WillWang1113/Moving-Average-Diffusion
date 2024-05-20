@@ -1,5 +1,9 @@
+import numpy as np
 import torch
 from src.models.diffusion import BaseDiffusion
+from torch.nn import AvgPool1d, functional
+
+import matplotlib.pyplot as plt
 
 
 class Sampler:
@@ -84,4 +88,60 @@ class Sampler:
                 raise ValueError("no such mode!")
 
 
+def plot_fcst(y_pred, y_real, save_name, kernel_size: list = None):
 
+    fig, ax = plt.subplots(3, 3, figsize=[8,6])
+    ax = ax.flatten()
+    if isinstance(y_pred, np.ndarray):
+        n_sample = y_pred.shape[0]
+        bs = y_pred.shape[1]
+        for k in range(len(ax)):
+            choose = np.random.randint(0, bs)
+            sample_real = y_real[choose, :, 0]
+            sample_pred = y_pred[:, choose, :, 0].T
+            ax[k].plot(sample_real, label="real")
+            ax[k].plot(sample_pred, c="black", alpha=1 / n_sample)
+            ax[k].legend()
+            ax[k].set_title(f"sample no. {choose}")
+    else:
+        n_sample = y_pred[0].shape[0]
+        choose = 99
+        for k in range(len(ax)):
+            sample_real = y_real[-k - 1][choose, :, 0]
+            sample_pred = y_pred[-k - 1][:, choose, :, 0].T
+            ax[k].plot(sample_real, label="real")
+            ax[k].plot(sample_pred, c="black", alpha=1 / n_sample)
+            ax[k].legend()
+            ax[k].set_title(f"MA kernel size: {kernel_size[-k-1]}")
+        fig.suptitle(f"sample no. {choose}")
+    fig.tight_layout()
+    fig.savefig(save_name)
+
+
+def temporal_avg(y_pred, y_real, kernel_size, kind):
+    all_res_pred, all_res_real = [], []
+    for i in range(y_pred.shape[-1]):
+        res_y_pred = y_pred[..., i]
+        ks = kernel_size[i]
+        avgpool = AvgPool1d(ks, ks)
+        res_y_real = torch.from_numpy(y_real)
+        res_y_real = avgpool(res_y_real.permute(0, 2, 1)).permute(0, 2, 1)
+        res_y_real = res_y_real.numpy()
+        assert kind in ["freq", "time"]
+        if kind == "time":
+            # res_y_pred: [n_sample, bs, ts, dim]
+            res_y_pred = torch.from_numpy(res_y_pred).flatten(end_dim=1)
+            # res_y_pred: [n_sample * bs, ts, dim]
+            res_y_pred = functional.interpolate(
+                res_y_pred.permute(0, 2, 1),
+                size=y_real.shape[1] - kernel_size[i] + 1,
+            )
+            res_y_pred = res_y_pred[..., :: kernel_size[i]].permute(0, 2, 1)
+            assert res_y_pred.shape[1:] == res_y_real.shape[1:]
+            res_y_pred = res_y_pred.reshape((-1, *res_y_real.shape)).numpy()
+        else:
+            res_y_pred = res_y_pred[:, :, ks - 1 :: ks, :]
+            assert res_y_pred.shape[2] == res_y_real.shape[1]
+        all_res_pred.append(res_y_pred)
+        all_res_real.append(res_y_real)
+    return all_res_pred, all_res_real

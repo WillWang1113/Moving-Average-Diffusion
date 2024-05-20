@@ -307,7 +307,7 @@ class MovingAvgDiffusion(BaseDiffusion):
                 )
 
             if t == 0:
-                x = x_hat + self.sigmas[t]
+                x = x_hat + torch.randn_like(x) * self.sigmas[t]
             else:
                 # calculate coeffs
                 prev_t = iter_T[i + 1]

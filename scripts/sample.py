@@ -6,7 +6,7 @@ import os
 import glob
 from src.utils.filters import get_factors
 from src.utils.train import setup_seed
-from src.utils.sample import Sampler
+from src.utils.sample import Sampler, plot_fcst, temporal_avg
 from src.utils.metrics import calculate_metrics
 import matplotlib.pyplot as plt
 
@@ -23,7 +23,7 @@ root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
 dataset = "MovingAvgDiffusion"
 deterministic = True
 fast_sample = True
-smoke_test = True
+smoke_test = False
 collect_all = True
 
 exp_path = os.path.join(root_path, dataset)
@@ -39,8 +39,9 @@ else:
     sample_steps = None
 kernel_size.sort()
 kernel_size.reverse()
-kernel_size+=[1]
+kernel_size += [1]
 print(kernel_size)
+
 
 def main():
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
@@ -51,8 +52,8 @@ def main():
     with open(os.path.join(root_path, "scaler.npy"), "rb") as f:
         scaler = np.load(f, allow_pickle="TRUE").item()
 
-    df_out = {}
-    exp_dirs = glob.glob("MLPBackbone_*", root_dir=exp_path)
+    df_out = []
+    exp_dirs = glob.glob("*Backbone*", root_dir=exp_path)
     # exp_dirs.sort()
     exp_dirs = [e[:-2] for e in exp_dirs]
     exp_dirs = list(set(exp_dirs))
@@ -65,7 +66,7 @@ def main():
         for i in range(num_training):
             read_d = os.path.join(exp_path, d + f"_{i}", "diffusion.pt")
             print(read_d)
-            kind = d.split('_')[1]
+            kind = d.split("_")[1]
             diff = torch.load(read_d)
 
             # DDIM on 50 steps
@@ -84,20 +85,25 @@ def main():
                 sigmas = torch.zeros_like(diff.betas)
             else:
                 # sigmas = None
-                sigmas = torch.linspace(1.5e-3, 0.5, diff.T, device=diff.device)
+                if d.__contains__('cold'):
+                    print('COLD DiFFUSION can not introduce uncertainty')
+                    sigmas = torch.zeros_like(diff.betas)
+                else:
+                    sigmas = torch.linspace(1, 1, diff.T, device=diff.device)
+                    sigmas[0] = sigmas[1]
             diff.config_sample(sigmas, sample_steps)
 
             # PLOT WEIGHTS
             # cn = diff.conditioner
             # for name, p in cn.named_parameters():
             #     print(name, p[0])
-                # if name.__contains__('weight'):
-                #     fig, ax = plt.subplots()
-                #     pos = ax.imshow(p.detach().cpu().numpy(), cmap='RdBu')
-                #     cbar = fig.colorbar(pos, ax=ax)
-                #     # cbar.minorticks_on()
-                #     fig.tight_layout()
-                #     fig.savefig('assets/'+name+'.png')
+            # if name.__contains__('weight'):
+            #     fig, ax = plt.subplots()
+            #     pos = ax.imshow(p.detach().cpu().numpy(), cmap='RdBu')
+            #     cbar = fig.colorbar(pos, ax=ax)
+            #     # cbar.minorticks_on()
+            #     fig.tight_layout()
+            #     fig.savefig('assets/'+name+'.png')
 
             sampler = Sampler(diff, 50, scaler)
 
@@ -105,39 +111,34 @@ def main():
             y_pred, y_real = sampler.sample(
                 test_dl, smoke_test=smoke_test, collect_all=collect_all
             )
-            print(y_pred.shape)
+            # print(y_pred.shape)
+            if collect_all:
+                y_pred, y_real = temporal_avg(y_pred, y_real, kernel_size, kind)
 
-            m = calculate_metrics(y_pred, y_real, kind=kind, kernel_size=kernel_size)
+            m = calculate_metrics(y_pred, y_real)
             avg_m.append(m)
-            # bs, ts, dims = y_pred.shape
-            n_sample = y_pred.shape[0]
-            bs = y_pred.shape[1]
+            # plot_fcst(
+            #     y_pred,
+            #     y_real,
+            #     kernel_size=kernel_size,
+            #     save_name=f'assets/{'fast_' if fast_sample else ''}{'dtm_' if deterministic else ''}{'multi_' if collect_all else ''}{d}.png',
+            # )
 
-            if i == 0 or i == "t":
-                fig, ax = plt.subplots(3, 3)
-                ax = ax.flatten()
-                for k in range(9):
-                    choose = np.random.randint(0, bs)
-                    sample_real = y_real[choose, :, 0]
-                    # sample_pred = y_pred[choose, :, 0]
-                    sample_pred = y_pred[:, choose, :, 0].T
-                    # ax[k].scatter(sample_pred[:,2], sample_pred[:,5])
-                    ax[k].plot(sample_real, label="real")
-                    ax[k].legend()
-                    # ax[k].plot(sample_pred, c="black")
-                    ax[k].plot(sample_pred, c="black", alpha=1 / n_sample)
-                # fig.suptitle(f"ma_term: {L}")
-                fig.tight_layout()
-                fig.savefig(
-                    f"assets/{'fast' if fast_sample else ''}_{'dtm' if deterministic else 'sto'}_{d}.png"
-                )
+
         avg_m = np.array(avg_m)
-        df_out[d] = avg_m.mean(axis=0)
-        print(df_out[d])
-        break
-    # df_out = pd.DataFrame(df_out, index=["RMSE", "MAE", "CRPS"]).T
+        df = pd.DataFrame(
+            avg_m.mean(axis=0, keepdims=False if collect_all else True),
+            columns=["RMSE", "MAE", "CRPS"],
+        )
+        df["method"] = d
+        df["granularity"] = kernel_size if collect_all else 1
+        df_out.append(df)
+
+    df_out = pd.concat(df_out)
+    df_out = df_out.reindex(columns=["method", "granularity", "RMSE", "MAE", "CRPS"])
     # print(df_out)
-    # df_out.to_csv(f"{'fast' if fast_sample else ''}_{'dtm' if deterministic else ''}.csv")
+    # df_out.to_csv("test.csv")
+    df_out.to_csv(f"{'fast' if fast_sample else ''}_{'dtm' if deterministic else ''}.csv")
 
 
 if __name__ == "__main__":
