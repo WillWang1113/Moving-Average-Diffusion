@@ -59,7 +59,7 @@ def syntheic_sine(t_steps=4000, batch_size=128, freq_kw=None):
     return train_dl, test_dl
 
 
-def mfred(setting="mfred"):
+def mfred():
     df = pd.read_csv(
         os.path.join(root_pth, "MFRED_clean.csv"), index_col=0, parse_dates=True
     )
@@ -67,9 +67,7 @@ def mfred(setting="mfred"):
     dummy_ = pd.get_dummies(df[["hour", "weekday"]], prefix_sep=":").astype("float")
     df = pd.concat([df, dummy_], axis=1)
     df = df.drop(columns=["hour", "weekday"])
-    CONFIG = yaml.safe_load(open(f"configs/{setting}.yaml", "r"))
-    data_config = CONFIG.pop("data_config")
-    data_config["freq_kw"] = CONFIG["diff_config"]["freq_kw"]
+    data_config = yaml.safe_load(open("configs/mfred.yaml", "r"))
     data_config["cols"] = df.columns.tolist()
 
     ct = ColumnTransformer(
@@ -112,9 +110,18 @@ def mfred(setting="mfred"):
         shuffle=True,
         pin_memory=True,
     )
-    val_dl = DataLoader(val_ds, batch_size=data_config["batch_size"], pin_memory=True,)
-    test_dl = DataLoader(test_ds, batch_size=data_config["batch_size"], shuffle=False)
-    return train_dl, val_dl, test_dl, CONFIG, y_scaler
+    val_dl = DataLoader(
+        val_ds,
+        batch_size=data_config["batch_size"],
+        pin_memory=True,
+    )
+    test_dl = DataLoader(
+        test_ds,
+        batch_size=data_config["batch_size"] * 2,
+        shuffle=False,
+        pin_memory=True,
+    )
+    return train_dl, val_dl, test_dl, y_scaler
 
 
 def nrel(setting="nrel"):
@@ -123,7 +130,6 @@ def nrel(setting="nrel"):
     )
     CONFIG = yaml.safe_load(open(f"configs/{setting}.yaml", "r"))
     data_config = CONFIG["data_config"]
-    data_config["freq_kw"] = CONFIG["diff_config"]["freq_kw"]
     data_config["cols"] = df.columns.tolist()
 
     ct = ColumnTransformer(
@@ -165,6 +171,15 @@ def nrel(setting="nrel"):
         shuffle=True,
         pin_memory=True,
     )
-    val_dl = DataLoader(val_ds, batch_size=data_config["batch_size"], pin_memory=True,)
-    test_dl = DataLoader(test_ds, batch_size=data_config["batch_size"], shuffle=False)
+    val_dl = DataLoader(
+        val_ds,
+        batch_size=data_config["batch_size"],
+        pin_memory=True,
+    )
+    test_dl = DataLoader(
+        test_ds,
+        batch_size=data_config["batch_size"],
+        shuffle=False,
+        pin_memory=True,
+    )
     return train_dl, val_dl, test_dl, CONFIG, y_scaler

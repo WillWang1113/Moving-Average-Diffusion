@@ -57,7 +57,8 @@ class MovingAvgTime(nn.Module):
         # x = torch.cat([front, x, end], dim=1)
 
         x = self.avg(x.permute(0, 2, 1))
-        x = nn.functional.interpolate(x, size=orig_size, mode="linear")
+        # x = nn.functional.interpolate(x, size=orig_size, mode="linear")
+        x = nn.functional.interpolate(x, size=orig_size)
         x = x.permute(0, 2, 1)
         return x
 
@@ -85,12 +86,13 @@ class MovingAvgFreq(torch.nn.Module):
         self.real_imag = real_imag
 
     def forward(self, x: torch.Tensor):
-        if self.real_imag:
-            x_complex = real_imag_to_complex_freq(x)
-        else:
-            x_complex = x
-        x_filtered = x_complex * self.Hw.to(x.device)
-        if self.real_imag:
-            x_filtered = complex_freq_to_real_imag(x_filtered, x.shape[1])
-        
+        """_summary_
+
+        Args:
+            x (torch.Tensor): complex tensor
+
+        Returns:
+            torch.Tensor: complex tensor
+        """
+        x_filtered = x * self.Hw.to(x.device)
         return x_filtered

@@ -2,8 +2,15 @@ import abc
 from typing import Dict
 import torch
 from torch import nn
-from ..schedules.collection import linear_schedule
-from ..utils.fourier import complex_freq_to_real_imag, idft, real_imag_to_complex_freq
+
+from src.models.blocks import RevIN
+from ..utils import schedule
+from ..utils.fourier import (
+    complex_freq_to_real_imag,
+    dft,
+    idft,
+    real_imag_to_complex_freq,
+)
 from ..utils.filters import get_factors, MovingAvgTime, MovingAvgFreq
 from .conditioner import BaseConditioner
 import matplotlib.pyplot as plt
@@ -38,15 +45,13 @@ class DDPM(BaseDiffusion):
         conditioner: BaseConditioner = None,
         freq_kw={"frequency": False},
         T=100,
-        noise_kw={"min_beta": 1e-4, "max_beta": 2e-2},
-        # min_beta=1e-4,
-        # max_beta=2e-2,
+        noise_kw={"name": "linear", "min_beta": 0.0, "max_beta": 0.0},
         device="cpu",
         **kwargs,
     ) -> None:
-        alphas, betas, alpha_bars = linear_schedule(
-            noise_kw["min_beta"], noise_kw["max_beta"], T, device
-        )
+        alphas, betas, alpha_bars, _ = getattr(
+            schedule, noise_kw["name"] + "_schedule"
+        )(self.T, device=device, **noise_kw)
         self.backbone = backbone.to(device)
         self.conditioner = conditioner
         if conditioner is not None:
@@ -160,9 +165,11 @@ class MovingAvgDiffusion(BaseDiffusion):
         conditioner: nn.Module = None,
         freq_kw={"frequency": False},
         device="cpu",
-        noise_kw=None,
-        fast_sample=False,
-        only_factor_step=True,
+        noise_kw={"name": "linear", "min_beta": 0.0, "max_beta": 0.0},
+        only_factor_step=False,
+        norm=True,
+        fit_on_diff=False,
+        mode="VE",
     ) -> None:
         self.backbone = backbone.to(device)
         self.conditioner = conditioner
@@ -172,7 +179,6 @@ class MovingAvgDiffusion(BaseDiffusion):
         self.device = device
         self.freq_kw = freq_kw
         self.seq_length = seq_length
-        self.fast_sample = fast_sample
 
         # get int factors
         middle_res = get_factors(seq_length) + [seq_length]
@@ -181,76 +187,58 @@ class MovingAvgDiffusion(BaseDiffusion):
         factors = (
             middle_res if only_factor_step else [i for i in range(2, seq_length + 1)]
         )
-        print("moving average terms:")
-        print(factors)
-
         self.T = len(factors)
-        self.sample_Ts = [factors.index(i) for i in middle_res]
-        self.sample_Ts.reverse()
+
         if freq_kw["frequency"]:
             print("DIFFUSION IN FREQUENCY DOMAIN!")
             freq = torch.fft.rfftfreq(seq_length)
+            self.degrade_fn = [MovingAvgFreq(f, freq=freq) for f in factors]
             self.freq_response = torch.concat(
-                [MovingAvgFreq(f, freq=freq).Hw.to(self.device) for f in factors]
+                [df.Hw.to(self.device) for df in self.degrade_fn]
             )
-            self.degrade_fn = [
-                MovingAvgFreq(f, freq=freq, real_imag=freq_kw["real_imag"])
-                for f in factors
-            ]
-
         else:
             print("DIFFUSION IN TIME DOMAIN!")
             self.degrade_fn = [MovingAvgTime(f) for f in factors]
-        if noise_kw is not None:
-            print("HOT DIFFUSION!")
-            _, _, alpha_bars = linear_schedule(
-                noise_kw["min_beta"], noise_kw["max_beta"], self.T, device
-            )
-            self.sigmas = torch.sqrt(1 - alpha_bars)
-            self.noise = True
-        else:
-            print("COLD DIFFUSION!")
-            self.noise = False
 
-    # # TODO: too slow
-    # @torch.no_grad
-    # def forward(self, x: torch.Tensor, t: torch.Tensor):
-    #     unique_t, indexes = torch.unique(t, return_inverse=True, sorted=True)
-    #     unique_idx = torch.unique(
-    #         indexes,
-    #         sorted=True,
-    #     )
-    #     x_noisy = torch.empty_like(x, device=x.device)
-    #     for i in unique_idx:
-    #         sub_t = unique_t[i]
-    #         degrade_fn = self.degrade_fn[sub_t]
-    #         x_noisy[indexes == i] = degrade_fn(x[indexes == i])
-    #         if self.noise:
-    #             noise = self.sigmas[sub_t] * torch.randn_like(x[indexes == i]).to(
-    #                 self.device
-    #             )
-    #             x_noisy[indexes == i] = x_noisy[indexes == i] + noise
-    #     return x_noisy
+        noise_schedule = getattr(schedule, noise_kw.pop("name") + "_schedule")(
+            n_steps=self.T, device=device, **noise_kw
+        )
+        # for corruption
+        self.betas = noise_schedule[-1]
+        self.alphas = noise_schedule[-2]
+        if torch.allclose(self.betas, torch.zeros_like(self.betas)):
+            print("COLD DIFFUSION")
+            self.cold = True
+        else:
+            print("HOT DIFFUSION")
+            self.cold = False
+
+        self.norm = norm
+        self.fit_on_diff = fit_on_diff
+        self.mode = mode
+        assert mode in ["VE", "VP"]
 
     # TODO: too slow
     @torch.no_grad
     def forward(self, x: torch.Tensor, t: torch.Tensor):
+        alpha_ = 1.0 if self.mode == "VE" else self.alphas[t].unsqueeze(1).unsqueeze(1)
+
         if self.freq_kw["frequency"]:
-            # real+imag --> complex tensor
-            x_complex = real_imag_to_complex_freq(x) if self.freq_kw["real_imag"] else x
+            x_complex = dft(x, real_imag=False)
+            # # real+imag --> complex tensor
+            # x_complex = real_imag_to_complex_freq(x) if self.freq_kw["real_imag"] else x
 
             # matrix multiplication
             x_filtered = x_complex * self.freq_response[t]
 
             # add noise if needed
-            if self.noise:
-                x_filtered = x_filtered + self.sigmas[t].unsqueeze(1).unsqueeze(
-                    1
-                ) * torch.randn_like(x_filtered).to(self.device)
+            x_filtered = alpha_ * x_filtered + self.betas[t].unsqueeze(1).unsqueeze(
+                1
+            ) * torch.randn_like(x_filtered).to(self.device)
 
             # complex tensor --> real+imag
             x_noisy = (
-                complex_freq_to_real_imag(x_filtered, x.shape[1])
+                complex_freq_to_real_imag(x_filtered)
                 if self.freq_kw["real_imag"]
                 else x_filtered
             )
@@ -261,48 +249,106 @@ class MovingAvgDiffusion(BaseDiffusion):
                 x_n = self.degrade_fn[t[i]](x[[i], ...])
                 x_noisy.append(x_n)
             x_noisy = torch.concat(x_noisy)
-            if self.noise:
-                x_noisy = x_noisy + self.sigmas[t].unsqueeze(1).unsqueeze(
-                    1
-                ) * torch.randn_like(x_noisy).to(self.device)
+            x_noisy = x_noisy * alpha_ + self.betas[t].unsqueeze(1).unsqueeze(
+                1
+            ) * torch.randn_like(x_noisy).to(self.device)
 
         return x_noisy
 
     @torch.no_grad
-    def backward(self, x: torch.Tensor, condition: Dict[str, torch.Tensor] = None):
-        c = self._encode_condition(condition)
+    def backward(
+        self,
+        x: torch.Tensor,
+        condition: Dict[str, torch.Tensor] = None,
+        collect_all: bool = False,
+    ):
+        c, (mu, std) = self._encode_condition(condition)
         if c.shape[0] != x.shape[0]:
             c = c.repeat(x.shape[0] // c.shape[0], 1)
+            mu = mu.repeat(x.shape[0] // mu.shape[0], 1, 1)
+            std = std.repeat(x.shape[0] // std.shape[0], 1, 1)
 
-        iter_T = self.sample_Ts if self.fast_sample else range(self.T - 1, -1, -1)
+        # get denoise steps (DDIM/full)
+        iter_T = self.sample_Ts
+        # iter_T = self.sample_Ts if self.fast_sample else list(range(self.T - 1, -1, -1))
 
-        for t in iter_T:
+        all_x = [x]
+        for i in range(len(iter_T)):
+            # i is the index of denoise step, t is the denoise step
+            t = iter_T[i]
             t_tensor = torch.tensor(t, device=x.device).repeat(x.shape[0])
-            x_hat = self.backbone(x, t_tensor, c)
 
-            if self.noise:
-                # FOR NOISE, DDIM(\eta = 0)
-                coeff = (self.sigmas[t - 1]**2 - 0.01**2) / self.sigmas[t]**2
-                coeff = torch.sqrt(coeff)
-                if t == 0:
-                    x = x_hat
-                else:
-                    x = (
-                        x * coeff
-                        + self.degrade_fn[t - 1](x_hat)
-                        - self.degrade_fn[t](x_hat) * coeff + torch.randn_like(x) * 0.01
-                    )
+            # TODO: correct normalize when backward!
+            if self.norm:
+                mean = torch.mean(x, dim=1, keepdim=True)
+                stdev = torch.sqrt(
+                    torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5
+                )
+                x_norm = (x - mean) / stdev
             else:
-                # FOR DETERMINISTIC
-                if t == 0:
-                    x = x - self.degrade_fn[t](x_hat) + x_hat
-                else:
-                    x = x - self.degrade_fn[t](x_hat) + self.degrade_fn[t - 1](x_hat)
+                x_norm = x
 
-        if self.freq_kw["frequency"]:
-            x = idft(x, **self.freq_kw)
+            if self.freq_kw["frequency"]:
+                x_norm = dft(x_norm, **self.freq_kw)
+
+            # estimate x_0
+            x_hat = self.backbone(x_norm, t_tensor, c)
+            if self.fit_on_diff:
+                x_hat = x_hat + x_norm
+
+            # in frequency domain, it's easier to do iteration in complex tensor
+            if self.freq_kw["frequency"]:
+                x = dft(x)
+                # x = real_imag_to_complex_freq(x) if self.freq_kw["real_imag"] else x
+                x_hat = (
+                    real_imag_to_complex_freq(x_hat)
+                    if self.freq_kw["real_imag"]
+                    else x_hat
+                )
+
+            if t == 0:
+                x = x_hat + self.sigmas[t]
+            else:
+                # calculate coeffs
+                prev_t = iter_T[i + 1]
+                if not self.cold:
+                    coeff = self.betas[prev_t] ** 2 - self.sigmas[t] ** 2
+                    coeff = torch.sqrt(coeff) / self.betas[t]
+                    sigma = self.sigmas[t]
+                else:
+                    coeff = 1
+                    sigma = 0
+                x = (
+                    x * coeff
+                    + self.degrade_fn[prev_t](x_hat)
+                    - self.degrade_fn[t](x_hat) * coeff
+                )
+
+                # fig, ax = plt.subplots()
+                # if self.freq_kw['frequency']:
+                #     x_plot = idft(x, real_imag=False)
+                # else:
+                #     x_plot = x.clone()
+                # for ii in range(3):
+                #     ax.plot(x_plot[ii].detach().cpu().real.numpy(), alpha=0.5)
+
+                # fig.suptitle(f"{t}")
+                # fig.savefig(f"assets/noisy_{t}.png")
+                # plt.close()
+
+                x = x + torch.randn_like(x) * sigma
+
+            # in frequency domain, backbone use real+imag to train
+            if self.freq_kw["frequency"]:
+                x = idft(x, real_imag=False)
+                # x_hat = idft(x_hat, **self.freq_kw)
+            if collect_all:
+                all_x.append(x * std + mu)
+
+        if collect_all:
+            all_x = torch.stack(all_x, dim=-1)
             # x_ts = [idft(x_t) for x_t in x_ts]
-        return x
+        return x * std + mu if not collect_all else all_x
         # return torch.stack(x_ts, dim=-1)
 
     def get_loss(self, x, condition: dict = None):
@@ -310,24 +356,44 @@ class MovingAvgDiffusion(BaseDiffusion):
         # sample t, x_T
         t = torch.randint(0, self.T, (batch_size,)).to(self.device)
 
-        # corrupt data
-        x_noisy = self.forward(x, t)
+        if self.norm:
+            mean = torch.mean(x, dim=1, keepdim=True)
+            stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5)
+        else:
+            mean, stdev = (
+                torch.zeros((x.shape[0], 1, x.shape[-1]), device=x.device),
+                torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
+            )
+        x_norm = (x - mean) / stdev
 
-        # look at corrupted data
+
+        # corrupt data
+        x_noisy = self.forward(x_norm, t)
+
+        # # look at corrupted data
         # fig, ax = plt.subplots()
+        # ax.plot(x[0].detach().cpu())
         # ax.plot(x_noisy[0].detach().cpu())
         # fig.suptitle(f'{t[0].detach().cpu()}')
         # fig.savefig(f'assets/noisy_{t[0]}.png')
         # plt.close()
 
         # eps_theta
-        c = self._encode_condition(condition)
+        # GET mu and std in time domain
+        c, (mu, std) = self._encode_condition(condition)
         x_hat = self.backbone(x_noisy, t, c)
+        if self.fit_on_diff:
+            x_hat = x_hat + x_noisy
+        if self.freq_kw['frequency']:
+            x_hat = x_hat * std 
+            x_hat[:,[0],:] = x_hat[:,[0],:] + mu * self.seq_length**0.5
+        else:
+            x_hat = x_hat * std + mu
 
         # compute loss
-        if self.freq_kw["frequency"] and (not self.freq_kw["real_imag"]):
-            x = torch.fft.irfft(x, dim=1, norm="ortho")
-            x_hat = torch.fft.irfft(x_hat, dim=1, norm="ortho")
+        if self.freq_kw["frequency"]:
+            x = dft(x, **self.freq_kw)
+
         loss = nn.functional.mse_loss(x_hat, x)
         return loss
 
@@ -337,83 +403,25 @@ class MovingAvgDiffusion(BaseDiffusion):
         condition: Dict[str, torch.Tensor] = None,
         n_sample: int = 1,
     ):
+        # * INIT ON TIME DOMAIN AND DO TRANSFORM
         # TODO: condition on basic predicion f(x)
         if (condition is not None) and (self.conditioner is not None):
             # ! just for test !
-            # ! use observed last !
-            if self.freq_kw["frequency"]:
-                time_value = condition["observed_data"]
+            # ! use latest observed as zero frequency component !
+            time_value = condition["observed_data"][:, [-1], :]
+            prev_value = torch.zeros_like(time_value) if self.norm else time_value
+            prev_value = prev_value.expand(-1, x.shape[1], -1)
 
-                # ortho norm: factor of sqrt(seq_len)
-                prev_value = time_value[:, [-1], :] * torch.sqrt(
-                    torch.tensor(time_value.shape[1], device=x.device)
+            noise = (
+                prev_value
+                + torch.randn(
+                    n_sample,
+                    *prev_value.shape,
+                    device=prev_value.device,
+                    dtype=prev_value.dtype,
                 )
-                if self.noise:
-                    prev_value = torch.concat(
-                        [
-                            prev_value,
-                            torch.zeros(
-                                x.shape[0],
-                                time_value.shape[1] // 2,
-                                x.shape[2],
-                                device=x.device,
-                            ),
-                        ],
-                        dim=1,
-                    )
-                    prev_value = prev_value.to(torch.cfloat)
-                    noise = (
-                        prev_value
-                        + torch.randn(
-                            n_sample,
-                            *prev_value.shape,
-                            device=x.device,
-                            dtype=torch.cfloat,
-                        )
-                        * self.sigmas[-1]
-                    ).flatten(end_dim=1)
-
-                else:
-                    noisy_zero_freq = prev_value + torch.randn(
-                        n_sample, *prev_value.shape, device=x.device
-                    ) * 0.1 * prev_value.unsqueeze(0)
-                    noisy_zero_freq = noisy_zero_freq.view(-1, 1, x.shape[2])
-
-                    noise = torch.concat(
-                        [
-                            noisy_zero_freq,
-                            torch.zeros(
-                                n_sample * x.shape[0],
-                                x.shape[1] // 2,
-                                x.shape[2],
-                                device=x.device,
-                            ),
-                        ],
-                        dim=1,
-                    ).to(torch.cfloat)
-                if self.freq_kw["real_imag"]:
-                    noise = complex_freq_to_real_imag(noise, orig_seq_length=x.shape[1])
-
-            else:
-                if self.noise:
-                    prev_value = condition["observed_data"][:, [-1], :].expand(
-                        -1, x.shape[1], -1
-                    )
-                    noise = (
-                        prev_value
-                        + torch.randn(n_sample, *prev_value.shape, device=x.device)
-                        * self.sigmas[-1]
-                    ).flatten(end_dim=1)
-
-                else:
-                    prev_value = condition["observed_data"][:, [-1], :]
-                    prev_value = (
-                        prev_value
-                        + torch.randn(n_sample, *prev_value.shape, device=x.device)
-                        * 0.1
-                        * prev_value.unsqueeze(0)
-                    ).view(-1, 1, x.shape[2])
-                    noise = prev_value.expand(-1, x.shape[1], -1)
+                * self.betas[-1]
+            ).flatten(end_dim=1)
 
         else:
             # condition on given target
@@ -427,13 +435,24 @@ class MovingAvgDiffusion(BaseDiffusion):
 
     def _encode_condition(self, condition: dict = None):
         if (condition is not None) and (self.conditioner is not None):
-            c = self.conditioner(**condition)
+            c, (mu, std) = self.conditioner(**condition)
         else:
             c = None
-        return c
+            mu, std = None, None
+        return c, (mu, std)
 
     def get_params(self):
         params = list(self.backbone.parameters())
         if self.conditioner is not None:
             params += list(self.conditioner.parameters())
         return params
+
+    def config_sample(self, sigmas=None, sample_steps=None):
+        self.sigmas = sigmas
+        self.sample_Ts = (
+            list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
+        )
+        for i in range(len(self.sample_Ts) - 1):
+            t = self.sample_Ts[i]
+            prev_t = self.sample_Ts[i + 1]
+            assert self.betas[prev_t] >= self.sigmas[t]

@@ -30,16 +30,10 @@ class MLPConditioner(BaseConditioner):
     ) -> None:
         super().__init__()
         all_input_channel = seq_channels * seq_length
-        # include observed time
-        # if encode_tp:
-        #     all_input_channel += seq_length
 
         # include external features
         if future_seq_channels is not None and future_seq_length is not None:
             all_input_channel += future_seq_channels * future_seq_length
-
-        # # TEST: frequency encoding
-        # all_input_dim += (seq_length // 2 + 1) * seq_channels * 2
 
         self.latent_dim = latent_dim
         # self.encode_tp = encode_tp
@@ -47,6 +41,12 @@ class MLPConditioner(BaseConditioner):
             in_channels=all_input_channel,
             hidden_channels=[hidden_size, hidden_size, latent_dim],
         )
+
+        self.norm = norm
+        self.seq_channels = seq_channels
+        if norm:
+            self.mu_net = nn.Linear(latent_dim, 1 * seq_channels)
+            self.std_net = nn.Linear(latent_dim, 1 * seq_channels)
 
     def forward(self, observed_data, future_features=None, **kwargs):
         x = observed_data
@@ -61,7 +61,16 @@ class MLPConditioner(BaseConditioner):
             ff = future_features
             trajs_to_encode = torch.concat([trajs_to_encode, ff.flatten(1)], axis=-1)
         out = self.input_enc(trajs_to_encode)
-        return out
+
+        if self.norm:
+            mu = self.mu_net(out).reshape((-1, 1, self.seq_channels))
+            std = self.std_net(out).reshape((-1, 1, self.seq_channels))
+        else:
+            mu, std = (
+                torch.zeros((x.shape[0], 1, x.shape[-1]), device=x.device),
+                torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
+            )
+        return out, (mu, std)
 
 
 class RNNConditioner(nn.Module):

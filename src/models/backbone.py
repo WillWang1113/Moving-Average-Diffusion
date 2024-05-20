@@ -2,11 +2,10 @@ import torch
 from typing import List, Union, Tuple
 from torch import nn
 from torchvision.ops import MLP
-from .embedding import GaussianFourierProjection, SinusoidalPosEmb
+from .embedding import SinusoidalPosEmb
 from .blocks import (
     CMLP,
     ComplexRELU,
-    ResBlk,
     UpBlock,
     DownBlock,
     MiddleBlock,
@@ -28,6 +27,7 @@ class MLPBackbone(nn.Module):
         hidden_size: int,
         latent_dim: int,
         n_layers: int = 3,
+        norm:bool = False,
         **kwargs,
     ) -> None:
         """
@@ -51,13 +51,13 @@ class MLPBackbone(nn.Module):
                 for _ in range(n_layers)
             ]
         )
-        self.seq_channals = seq_channels
+        self.seq_channels = seq_channels
         self.seq_length = seq_length
         if hidden_size != latent_dim:
             self.con_linear = nn.Linear(latent_dim, hidden_size)
         else:
             self.con_linear = nn.Identity()
-
+            
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
         t = self.pe(t)
@@ -67,8 +67,10 @@ class MLPBackbone(nn.Module):
             x = x + c
         for layer in self.net:
             x = x + layer(x)
-        x = self.unembedder(x).reshape((-1, self.seq_length, self.seq_channals))
+        x = self.unembedder(x).reshape((-1, self.seq_length, self.seq_channels))
         return x
+
+    
 
 
 

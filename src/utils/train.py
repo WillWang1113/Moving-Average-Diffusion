@@ -1,20 +1,23 @@
-import torch
 import os
+import random
+from datetime import datetime
 
+import torch
 from torch.utils.tensorboard import SummaryWriter
 
 # from src.models.diffusion import DDPM
 from tqdm import tqdm
 
 from src.models.diffusion import BaseDiffusion
-from src.utils.fourier import idft
+import numpy as np
 
 
-def loss_func(inputs, targets, loss_scale):
-    err = (inputs - targets) ** 2
-    err = torch.sum(err, dim=1)
-    err = err * loss_scale
-    return err.mean()
+def setup_seed(fix_seed=9):
+    random.seed(fix_seed)
+    torch.manual_seed(fix_seed)
+    np.random.seed(fix_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 class EarlyStopping:
@@ -79,7 +82,10 @@ class Trainer:
         self.lr = lr
         self.optimizer = torch.optim.Adam(params=diffusion.get_params(), lr=lr)
         self.device = device
-        self.writer = SummaryWriter()
+        self.exp_name = kwargs.get(
+            "exp_name", datetime.now().strftime("%Y%m%d%H%M%S")
+        )
+
         self.output_pth = output_pth
         self.early_stopper = (
             EarlyStopping(
@@ -88,14 +94,9 @@ class Trainer:
             if early_stop > 0
             else None
         )
-        self.train_counter = 0
 
     def train(self, train_dataloader, val_dataloader=None, epochs: int = None):
-        if self.train_counter >= 1:
-            print("Finetuning!")
-            self.optimizer = torch.optim.Adam(
-                params=self.diffusion.get_params(), lr=self.lr / 2
-            )
+        writer = SummaryWriter(f"runs/{self.exp_name}")
         E = epochs if epochs is not None else self.epochs
         # torch.save(self.model, self.output_pth)
         for e in tqdm(range(E), ncols=50):
@@ -114,7 +115,7 @@ class Trainer:
                 train_loss += loss
 
                 if self.alpha > 0:
-                    for p in self.diffusion.backbone.parameters():
+                    for p in self.diffusion.get_params():
                         loss += 0.5 * self.alpha * (p * p).sum()
 
                 # Backpropagation
@@ -127,9 +128,7 @@ class Trainer:
 
             if val_dataloader is not None:
                 val_loss = self.eval(val_dataloader)
-                self.writer.add_scalars(
-                    "Loss", {"train": train_loss, "val": val_loss}, e
-                )
+                writer.add_scalars("loss", {"train": train_loss, "val": val_loss}, e)
 
                 if self.early_stopper is not None:
                     self.early_stopper(val_loss, self.diffusion)
@@ -138,14 +137,13 @@ class Trainer:
                         break
 
             else:
-                self.writer.add_scalar("Loss/train", train_loss, e)
+                writer.add_scalar("train", train_loss, e)
                 # self.writer.add_scalars('Loss', {"train": train_loss}, e)
 
-        self.writer.close()
+        writer.close()
         if val_dataloader is not None:
             self.diffusion = torch.load(os.path.join(self.output_pth, "checkpoint.pt"))
         torch.save(self.diffusion, os.path.join(self.output_pth, "diffusion.pt"))
-        self.train_counter += 1
 
     def eval(self, dataset):
         test_loss = 0
@@ -160,89 +158,41 @@ class Trainer:
                 test_loss += loss
         return test_loss / len(dataset)
 
-    def test(self, test_dataloader, n_sample=50, scaler=None):
-        self._set_mode("val")
-        y_pred, y_real = [], []
-        for batch in test_dataloader:
-            for k in batch:
-                batch[k] = batch[k].to(self.device)
-            target = batch.pop("future_data")
-            # target_shape = target.shape
-            noise = self.diffusion.init_noise(target, batch, n_sample)
-            s = self.diffusion.backward(noise, batch)
-            samples = s.reshape((n_sample, target.shape[0], *s.shape[1:]))
-            if self.diffusion.freq_kw["frequency"]:
-                target = idft(target, **self.diffusion.freq_kw)
-            y_pred.append(samples.detach().cpu())
-            y_real.append(target.detach().cpu())
-        y_pred = torch.concat(y_pred, dim=1)
-        y_real = torch.concat(y_real)
-
-        if scaler is not None:
-            print("--" * 30, "inverse transform", "--" * 30)
-            mean, std = scaler["data"]
-            target = scaler["target"]
-            y_pred = y_pred * std[target] + mean[target]
-            y_real = y_real * std[target] + mean[target]
-
-        return y_pred.numpy(), y_real.numpy()
-
     def _set_mode(self, mode):
-        if mode == "train":
-            self.diffusion.backbone.train()
-            if self.diffusion.conditioner is not None:
-                self.diffusion.conditioner.train()
-        elif mode == "val":
-            self.diffusion.backbone.eval()
-            if self.diffusion.conditioner is not None:
-                self.diffusion.conditioner.eval()
+        if isinstance(self.diffusion, BaseDiffusion):
+            if mode == "train":
+                self.diffusion.backbone.train()
+                if self.diffusion.conditioner is not None:
+                    self.diffusion.conditioner.train()
+            elif mode == "val":
+                self.diffusion.backbone.eval()
+                if self.diffusion.conditioner is not None:
+                    self.diffusion.conditioner.eval()
+            else:
+                raise ValueError("no such mode!")
         else:
-            raise ValueError("no such mode!")
+            if mode == "train":
+                self.diffusion.train()
+            elif mode == "val":
+                self.diffusion.eval()
+            else:
+                raise ValueError("no such mode!")
 
 
-class Sampler:
-    def __init__(self, diffusion: BaseDiffusion, n_sample: int, scaler) -> None:
-        self.diffusion = diffusion
-        self.n_sample = n_sample
-        self.device = diffusion.get_params()[0].device
-        self.scaler = scaler
-        self.freq_kw = diffusion.freq_kw
+def get_expname_(config, bb_name, cn_name=None, df_name=None):
+    name = bb_name + "_"
+    diff_config = config["diff_config"]
+    if diff_config["freq_kw"]["frequency"]:
+        name += "freq_"
+    else:
+        name += "time_"
 
-    def sample(self, test_dataloader):
-        self._set_mode("val")
-        y_pred, y_real = [], []
-        for batch in test_dataloader:
-            for k in batch:
-                batch[k] = batch[k].to(self.device)
-            target = batch.pop("future_data")
-            # target_shape = target.shape
-            noise = self.diffusion.init_noise(target, batch, self.n_sample)
-            s = self.diffusion.backward(noise, batch)
-            samples = s.reshape((self.n_sample, target.shape[0], *s.shape[1:]))
+    name += f'norm_{diff_config['norm']}_diff_{diff_config['fit_on_diff']}_'
 
-            if self.diffusion.freq_kw["frequency"]:
-                target = idft(target, **self.diffusion.freq_kw)
-            y_pred.append(samples.detach().cpu())
-            y_real.append(target.detach().cpu())
-        y_pred = torch.concat(y_pred, dim=1)
-        y_real = torch.concat(y_real)
-
-        if self.scaler is not None:
-            print("--" * 30, "inverse transform", "--" * 30)
-            mean, std = self.scaler["data"]
-            target = self.scaler["target"]
-            y_pred = y_pred * std[target] + mean[target]
-            y_real = y_real * std[target] + mean[target]
-        return y_pred.numpy(), y_real.numpy()
-
-    def _set_mode(self, mode):
-        if mode == "train":
-            self.diffusion.backbone.train()
-            if self.diffusion.conditioner is not None:
-                self.diffusion.conditioner.train()
-        elif mode == "val":
-            self.diffusion.backbone.eval()
-            if self.diffusion.conditioner is not None:
-                self.diffusion.conditioner.eval()
-        else:
-            raise ValueError("no such mode!")
+    if (
+        diff_config["noise_kw"]["min_beta"] == diff_config["noise_kw"]["max_beta"]
+    ) and (diff_config["noise_kw"]["max_beta"] == 0):
+        name += "cold_"
+    else:
+        name += "hot_"
+    return name

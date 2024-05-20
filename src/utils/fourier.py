@@ -2,8 +2,6 @@ import torch
 import math
 from torch.fft import rfft, irfft
 
-
-
 def dft(x: torch.Tensor, **kwargs) -> torch.Tensor:
     """Compute the DFT of the input time series by keeping only the non-redundant components.
 
@@ -18,9 +16,9 @@ def dft(x: torch.Tensor, **kwargs) -> torch.Tensor:
 
     # Compute the FFT until the Nyquist frequency
     dft_full = rfft(x, dim=1, norm="ortho")
-    if kwargs.get('real_imag'):
+    if kwargs.get("real_imag"):
         # Concatenate real and imaginary parts
-        x_tilde = complex_freq_to_real_imag(dft_full, max_len)
+        x_tilde = complex_freq_to_real_imag(dft_full)
         # assert (
         #     x_tilde.size() == x.size()
         # ), f"The DFT and the input should have the same size. Got {x_tilde.size()} and {x.size()} instead."
@@ -39,12 +37,11 @@ def idft(x: torch.Tensor, **kwargs) -> torch.Tensor:
         torch.Tensor: Inverse DFT of x with the same size (batch_size, max_len, n_channels).
     """
     max_len = x.size(1)
-    if kwargs.get('real_imag'):
+    if kwargs.get("real_imag"):
         x_freq = real_imag_to_complex_freq(x)
     else:
         x_freq = x
-        max_len = 2*(max_len - 1)
-
+        max_len = 2 * (max_len - 1)
 
     # Apply IFFT
     x_time = irfft(x_freq, n=max_len, dim=1, norm="ortho")
@@ -81,8 +78,8 @@ def real_imag_to_complex_freq(x: torch.Tensor):
     return x_freq
 
 
-def complex_freq_to_real_imag(dft_full:torch.Tensor, orig_seq_length:int):
-    max_len = orig_seq_length
+def complex_freq_to_real_imag(dft_full: torch.Tensor):
+    max_len = 2 * (dft_full.shape[1] - 1)
 
     # Compute the FFT until the Nyquist frequency
     dft_re = torch.real(dft_full)
@@ -182,3 +179,77 @@ def moving_average_freq_response(N: int, sample_rate: float, freq: torch.Tensor)
 
 
 
+def dct(x, norm=None):
+    """
+    Discrete Cosine Transform, Type II (a.k.a. the DCT)
+    For the meaning of the parameter `norm`, see:
+    https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.fftpack.dct.html
+    :param x: the input signal
+    :param norm: the normalization, None or 'ortho'
+    :return: the DCT-II of the signal over the last dimension
+    """
+    x_shape = x.shape
+    N = x_shape[-1]
+    x = x.contiguous().view(-1, N)
+
+    v = torch.cat([x[:, ::2], x[:, 1::2].flip([1])], dim=1)
+
+    #Vc = torch.fft.rfft(v, 1)
+    Vc = torch.view_as_real(torch.fft.fft(v, dim=1))
+
+    k = - torch.arange(N, dtype=x.dtype,
+                       device=x.device)[None, :] * torch.pi / (2 * N)
+    W_r = torch.cos(k)
+    W_i = torch.sin(k)
+
+    V = Vc[:, :, 0] * W_r - Vc[:, :, 1] * W_i
+
+    if norm == 'ortho':
+        V[:, 0] /= torch.sqrt(torch.tensor(N)) * 2
+        V[:, 1:] /= torch.sqrt(torch.tensor(N) / 2) * 2
+
+    V = 2 * V.view(*x_shape)
+
+    return V
+
+
+def idct(X, norm=None):
+    """
+    The inverse to DCT-II, which is a scaled Discrete Cosine Transform, Type III
+    Our definition of idct is that idct(dct(x)) == x
+    For the meaning of the parameter `norm`, see:
+    https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.fftpack.dct.html
+    :param X: the input signal
+    :param norm: the normalization, None or 'ortho'
+    :return: the inverse DCT-II of the signal over the last dimension
+    """
+
+    x_shape = X.shape
+    N = x_shape[-1]
+
+    X_v = X.contiguous().view(-1, x_shape[-1]) / 2
+
+    if norm == 'ortho':
+        X_v[:, 0] *= torch.sqrt(torch.tensor(N)) * 2
+        X_v[:, 1:] *= torch.sqrt(torch.tensor(N) / 2) * 2
+
+    k = torch.arange(x_shape[-1], dtype=X.dtype,
+                     device=X.device)[None, :] * torch.pi / (2 * N)
+    W_r = torch.cos(k)
+    W_i = torch.sin(k)
+
+    V_t_r = X_v
+    V_t_i = torch.cat([X_v[:, :1] * 0, -X_v.flip([1])[:, :-1]], dim=1)
+
+    V_r = V_t_r * W_r - V_t_i * W_i
+    V_i = V_t_r * W_i + V_t_i * W_r
+
+    V = torch.cat([V_r.unsqueeze(2), V_i.unsqueeze(2)], dim=2)
+
+    #v = torch.fft.irfft(V, 1)
+    v = torch.fft.irfft(torch.view_as_complex(V), n=V.shape[1], dim=1)
+    x = v.new_zeros(v.shape)
+    x[:, ::2] += v[:, :N - (N // 2)]
+    x[:, 1::2] += v.flip([1])[:, :N // 2]
+
+    return x.view(*x_shape)

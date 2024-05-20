@@ -44,7 +44,7 @@ $$\mathbf{\tilde{x}}_{t-1} = \sqrt{\frac{\beta_{t-1}^2 - \sigma_t^2}{\beta_t^2}}
 When $\sigma_t = 0$, we have the deterministic sampling schedule:
 $$\frac{\mathbf{\tilde{x}}_{t-1}}{\beta_{t-1}} = \frac{\mathbf{\tilde{x}}_t}{\beta_t}  + \left(\frac{\mathbf{\tilde{K}}_{t-1}}{\beta_{t-1}} - \frac{\mathbf{\tilde{K}}_t}{\beta_t^2}\right) \mathbf{\tilde{x}}_0$$
 
-<!-- 
+
 $$\begin{aligned}
     q(\mathbf{\tilde{x}}_{t-1} | \mathbf{\tilde{x}}_t, \mathbf{\tilde{x}}_0) &= a \mathbf{\tilde{x}}_t + b \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime, \epsilon^\prime \sim \mathcal{C}\mathcal{N}(0, \mathbf{I}) \\
     &= a (\mathbf{\tilde{K}}_t \mathbf{\tilde{x}}_0 + \beta_t {\tilde{\epsilon}}) + b \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime \\
@@ -60,7 +60,7 @@ $$\begin{cases}
 \end{cases} \Rightarrow \begin{cases}
     a = \sqrt{(\beta_{t-1}^2 - \sigma_t^2)/{\beta_t^2}} \\
     b = \mathbf{\tilde{K}}_{t-1} - \sqrt{(\beta_{t-1}^2 - \sigma_t^2)/{\beta_t^2}} \mathbf{\tilde{K}}_t
-\end{cases}$$ -->
+\end{cases}$$
 
 
 ## Experiments
@@ -82,33 +82,66 @@ $$\begin{cases}
 
 ### MovingAvg Diffusion
 
-Deterministic sampling (DDIM, $\sigma_t = 0$)
+Linear schedule, deterministic sampling, fast_sample
 
-| Method      | RMSE     | MAE      | CRPS     |
-| ----------- | -------- | -------- | -------- |
-| cnn_freq_2M | 0.042480 | 0.032064 | 0.037333 |
-| cnn_time_2M | 0.077175 | 0.055606 | 0.058438 |
-| mlp_freq_5M | 0.087949 | 0.065613 | 0.068308 |
-| mlp_time_5M | 0.070852 | 0.051746 | 0.054352 |
+| method                     | RMSE     | MAE      | CRPS     |
+| -------------------------- | -------- | -------- | -------- |
+| mlp_freq_norm_on_diff_on   | 0.032953 | 0.024754 | 0.029487 |
+| mlp_freq_norm_on_diff_off  | 0.035471 | 0.026272 | 0.029652 |
+| mlp_time_norm_on_diff_on   | 0.035325 | 0.026056 | 0.030248 |
+| mlp_time_norm_on_diff_off  | 0.036394 | 0.026610 | 0.030867 |
+| cnn_freq_norm_on_diff_on   | 0.035590 | 0.026405 | 0.031303 |
+| cnn_freq_norm_on_diff_off  | 0.032834 | 0.024736 | 0.030798 |
+| cnn_time_norm_on_diff_on   | 0.036176 | 0.026803 | 0.031058 |
+| cnn_time_norm_on_diff_off  | 0.035221 | 0.026047 | 0.030936 |
+
+| mlp_freq_norm_off_diff_on  | 0.085846 | 0.065210 | 0.067466 |
+| mlp_freq_norm_off_diff_off | 0.084568 | 0.062234 | 0.064756 |
+| mlp_time_norm_off_diff_on  | 0.089474 | 0.065595 | 0.067332 |
+| mlp_time_norm_off_diff_off | 0.071982 | 0.052443 | 0.055350 |
+| cnn_freq_norm_off_diff_on  | 0.090144 | 0.065718 | 0.068588 |
+| cnn_freq_norm_off_diff_off | 0.043629 | 0.032828 | 0.037774 |
+| cnn_time_norm_off_diff_on  | 0.073314 | 0.053837 | 0.056869 |
+| cnn_time_norm_off_diff_off | 0.081367 | 0.057613 | 0.060580 |
+
+
+Constant schedule($\beta_t$=0, cold), deterministic sampling, fast_sample
+| method                                     | RMSE     | MAE      | CRPS     |
+| ------------------------------------------ | -------- | -------- | -------- |
+| MLPBackbone_freq_norm_True_diff_False_cold | 0.056430 | 0.042523 | 0.049077 |
+| MLPBackbone_freq_norm_True_diff_True_cold  | 0.055974 | 0.042676 | 0.049130 |
+| MLPBackbone_time_norm_True_diff_False_cold | 0.045785 | 0.034590 | 0.040869 |
+| MLPBackbone_time_norm_True_diff_True_cold  | 0.048523 | 0.037343 | 0.043683 |
+
+Constant schedule($\beta_t$=1, hot), deterministic sampling, fast_sample
+| MLPBackbone_freq_norm_True_diff_False_hot  | 0.035727 | 0.026662 | 0.029548 |
+| MLPBackbone_freq_norm_True_diff_True_hot   | 0.033309 | 0.024634 | 0.027158 |
+| MLPBackbone_time_norm_True_diff_False_hot  | 0.032919 | 0.023763 | 0.026949 |
+| MLPBackbone_time_norm_True_diff_True_hot   | 0.034374 | 0.025083 | 0.028804 |
 
 Stochastic sampling ($\sigma_t > 0$, Linear schedule, [0.01, 0.1])
 
 <!-- 1. small noise level: max = 1e-1 -->
 
-| Method   | RMSE      | MAE      | CRPS     |
-| -------- | --------- | -------- | -------- |
-| cnn_freq | 0.034253  | 0.025336 | 0.030797 |
-| cnn_time | 0.060331  | 0.043948 | 0.046540 |
-| mlp_freq | 0.069998  | 0.051043 | 0.053416 |
-| mlp_time | 0.057428  | 0.041764 | 0.043979 |
-
-
+| Method   | RMSE     | MAE      | CRPS     |
+| -------- | -------- | -------- | -------- |
+| cnn_freq | 0.034253 | 0.025336 | 0.030797 |
+| cnn_time | 0.060331 | 0.043948 | 0.046540 |
+| mlp_freq | 0.069998 | 0.051043 | 0.053416 |
+| mlp_time | 0.057428 | 0.041764 | 0.043979 |
+| DLinear  | 0.089804 | 0.073082 | -        |
 
 
 
 ## TODO
+- [ ] instance normalization -- bug fixing
+- [ ] $\sigma_t$ design -- cosine schedules
 - [ ] check the intermediate products (muli-resolution forecasts)
-- [ ] $\sigma_t$ design --> affects diversity
+- [ ] other SOTA forecasting method -- DLinear
 - [ ] embedding $t$ multiplication
-- [ ] other SOTA forecasting method
+
 <!-- - [ ] $\beta_t = \mathbf{\tilde{K}}_t$ -->
+
+
+
+

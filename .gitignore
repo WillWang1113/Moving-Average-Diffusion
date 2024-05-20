@@ -163,3 +163,5 @@ nohup.out
 assets/
 notebooks/
 runs/
+tests/
+*.csv
