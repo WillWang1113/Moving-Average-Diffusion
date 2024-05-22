@@ -218,7 +218,6 @@ class MovingAvgDiffusion(BaseDiffusion):
         self.mode = mode
         assert mode in ["VE", "VP"]
 
-    # TODO: too slow
     @torch.no_grad
     def forward(self, x: torch.Tensor, t: torch.Tensor):
         alpha_ = 1.0 if self.mode == "VE" else self.alphas[t].unsqueeze(1).unsqueeze(1)
@@ -264,6 +263,7 @@ class MovingAvgDiffusion(BaseDiffusion):
     ):
         c = self._encode_condition(condition)
         if c.shape[0] != x.shape[0]:
+            print("extending")
             c = c.repeat(x.shape[0] // c.shape[0], 1)
             # mu = mu.repeat(x.shape[0] // mu.shape[0], 1, 1)
             # std = std.repeat(x.shape[0] // std.shape[0], 1, 1)
@@ -296,8 +296,21 @@ class MovingAvgDiffusion(BaseDiffusion):
             x_hat = self.backbone(x_norm, t_tensor, c)
             if self.fit_on_diff:
                 x_hat = x_hat + x_norm
+                
 
             x_hat, (mu, std) = self._normalize(x_hat, freq=self.freq_kw["frequency"])
+            
+            # fig, ax = plt.subplots()
+            # if self.freq_kw['frequency']:
+            #     x_plot = idft(x_hat, real_imag=True)
+            # else:
+            #     x_plot = x_hat.clone()
+            # for ii in range(3):
+            #     ax.plot(x_plot[ii].detach().cpu().real.numpy(), alpha=0.5)
+
+            # fig.suptitle(f"{t}")
+            # fig.savefig(f"assets/noisynorm_x_{t}.png")
+            # plt.close()
 
             # in frequency domain, it's easier to do iteration in complex tensor
             if self.freq_kw["frequency"]:
@@ -310,34 +323,22 @@ class MovingAvgDiffusion(BaseDiffusion):
                 )
 
             if t == 0:
-                x = x_hat + torch.randn_like(x) * self.sigmas[t]
+                x = x_hat + torch.randn_like(x_hat) * self.sigmas[t]
             else:
                 # calculate coeffs
                 prev_t = iter_T[i + 1]
-                if not self.cold:
-                    coeff = self.betas[prev_t] ** 2 - self.sigmas[t] ** 2
-                    coeff = torch.sqrt(coeff) / self.betas[t]
-                    sigma = self.sigmas[t]
-                else:
-                    coeff = 1
-                    sigma = 0
+                coeff = self.betas[prev_t] ** 2 - self.sigmas[t] ** 2
+                coeff = torch.sqrt(coeff) / self.betas[t]
+                sigma = self.sigmas[t]
+                # coeff = 0
+                # sigma = self.betas[prev_t]
                 x = (
                     x * coeff
                     + self.degrade_fn[prev_t](x_hat)
                     - self.degrade_fn[t](x_hat) * coeff
                 )
 
-                # fig, ax = plt.subplots()
-                # if self.freq_kw['frequency']:
-                #     x_plot = idft(x, real_imag=False)
-                # else:
-                #     x_plot = x.clone()
-                # for ii in range(3):
-                #     ax.plot(x_plot[ii].detach().cpu().real.numpy(), alpha=0.5)
-
-                # fig.suptitle(f"{t}")
-                # fig.savefig(f"assets/noisy_{t}.png")
-                # plt.close()
+                
 
                 x = x + torch.randn_like(x) * sigma
 
@@ -426,7 +427,7 @@ class MovingAvgDiffusion(BaseDiffusion):
                     dtype=prev_value.dtype,
                 )
                 * self.betas[-1]
-            ).flatten(end_dim=1)
+            )
 
         else:
             # condition on given target
@@ -452,14 +453,16 @@ class MovingAvgDiffusion(BaseDiffusion):
             params += list(self.conditioner.parameters())
         return params
 
-    def config_sample(self, sigmas=None, sample_steps=None):
-        self.sigmas = sigmas
+    def config_sample(self, sigmas, sample_steps=None):
         self.sample_Ts = (
             list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
         )
+        self.sigmas = sigmas
+            
         for i in range(len(self.sample_Ts) - 1):
             t = self.sample_Ts[i]
             prev_t = self.sample_Ts[i + 1]
+            
             assert self.betas[prev_t] >= self.sigmas[t]
 
     def _normalize(self, x, freq=False):
@@ -482,7 +485,7 @@ class MovingAvgDiffusion(BaseDiffusion):
                     (x_time.shape[0], 1, x_time.shape[-1]), device=x_time.device
                 ),
             )
-        x_norm = (x - mean) / stdev
+        x_norm = (x_time - mean) / stdev
 
         if freq:
             x_norm = dft(x_norm, **self.freq_kw)

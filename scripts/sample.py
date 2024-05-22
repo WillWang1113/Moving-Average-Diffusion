@@ -10,24 +10,26 @@ from src.utils.sample import Sampler, plot_fcst, temporal_avg
 from src.utils.metrics import calculate_metrics
 import matplotlib.pyplot as plt
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 setup_seed()
 print(device)
 
 
-root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
+# root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
+root_path = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/mfred"
 # dataset = "benchmarks"
 dataset = "MovingAvgDiffusion"
 deterministic = True
 fast_sample = True
-smoke_test = False
+smoke_test = True
 collect_all = True
+n_sample = 200
+num_training = 1
 
 exp_path = os.path.join(root_path, dataset)
-num_training = 1
 
 if fast_sample:
     seq_length = 288
@@ -41,29 +43,31 @@ kernel_size.sort()
 kernel_size.reverse()
 kernel_size += [1]
 print(kernel_size)
-
+# print(exp_path)
 
 def main():
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
 
-    with open(os.path.join(root_path, "y_real.npy"), "rb") as f:
-        y_real = np.load(f)
+    # with open(os.path.join(root_path, "y_real.npy"), "rb") as f:
+    #     y_real = np.load(f)
 
     with open(os.path.join(root_path, "scaler.npy"), "rb") as f:
         scaler = np.load(f, allow_pickle="TRUE").item()
 
     df_out = []
-    exp_dirs = glob.glob("*Backbone*", root_dir=exp_path)
+    exp_dirs = glob.glob(exp_path+"/*Backbone*")
+    # exp_dirs = glob.glob("*Backbone*", root_dir=exp_path)
     # exp_dirs.sort()
     exp_dirs = [e[:-2] for e in exp_dirs]
     exp_dirs = list(set(exp_dirs))
     exp_dirs.sort()
-    print(exp_dirs)
+    # print(exp_dirs)
 
     for d in exp_dirs:
         # for d in exp_dirs:
         avg_m = []
         for i in range(num_training):
+            # i = 't'
             read_d = os.path.join(exp_path, d + f"_{i}", "diffusion.pt")
             print(read_d)
             kind = d.split("_")[1]
@@ -85,13 +89,15 @@ def main():
                 sigmas = torch.zeros_like(diff.betas)
             else:
                 # sigmas = None
-                if d.__contains__('cold'):
-                    print('COLD DiFFUSION can not introduce uncertainty')
+                if d.__contains__("cold"):
+                    print("COLD DiFFUSION can not introduce uncertainty")
                     sigmas = torch.zeros_like(diff.betas)
                 else:
-                    sigmas = torch.linspace(1, 1, diff.T, device=diff.device)
-                    sigmas[0] = sigmas[1]
+                    # sigmas = None
+                    sigmas = torch.linspace(1e-3, 0.7, diff.T, device=diff.device)
+                    # sigmas[0] = sigmas[1]
             diff.config_sample(sigmas, sample_steps)
+            print(diff.sigmas)
 
             # PLOT WEIGHTS
             # cn = diff.conditioner
@@ -105,7 +111,7 @@ def main():
             #     fig.tight_layout()
             #     fig.savefig('assets/'+name+'.png')
 
-            sampler = Sampler(diff, 50, scaler)
+            sampler = Sampler(diff, n_sample, scaler)
 
             # y_pred, y_real = sampler.predict(test_dl)
             y_pred, y_real = sampler.sample(
@@ -117,20 +123,20 @@ def main():
 
             m = calculate_metrics(y_pred, y_real)
             avg_m.append(m)
-            # plot_fcst(
-            #     y_pred,
-            #     y_real,
-            #     kernel_size=kernel_size,
-            #     save_name=f'assets/{'fast_' if fast_sample else ''}{'dtm_' if deterministic else ''}{'multi_' if collect_all else ''}{d}.png',
-            # )
-
+            if i in [0, "t"]:
+                plot_fcst(
+                    y_pred,
+                    y_real,
+                    kernel_size=kernel_size,
+                    save_name=f"assets/{'fast_' if fast_sample else ''}{'dtm_' if deterministic else ''}{'multi_' if collect_all else ''}{d.split('/')[-1]}.png",
+                )
 
         avg_m = np.array(avg_m)
         df = pd.DataFrame(
             avg_m.mean(axis=0, keepdims=False if collect_all else True),
             columns=["RMSE", "MAE", "CRPS"],
         )
-        df["method"] = d
+        df["method"] = d.split('/')[-1]
         df["granularity"] = kernel_size if collect_all else 1
         df_out.append(df)
 
@@ -138,7 +144,9 @@ def main():
     df_out = df_out.reindex(columns=["method", "granularity", "RMSE", "MAE", "CRPS"])
     # print(df_out)
     # df_out.to_csv("test.csv")
-    df_out.to_csv(f"{'fast' if fast_sample else ''}_{'dtm' if deterministic else ''}.csv")
+    df_out.to_csv(
+        f"{'fast' if fast_sample else ''}_{'dtm' if deterministic else ''}.csv"
+    )
 
 
 if __name__ == "__main__":

@@ -26,8 +26,13 @@ class Sampler:
             target = batch.pop("future_data")
             # target_shape = target.shape
             noise = self.diffusion.init_noise(target, batch, self.n_sample)
-            s = self.diffusion.backward(noise, batch, collect_all)
-            samples = s.reshape((self.n_sample, target.shape[0], *s.shape[1:]))
+            samples = []
+            for i in range(self.n_sample):
+                s = self.diffusion.backward(noise[i], batch, collect_all)
+                samples.append(s)
+            samples = torch.stack(samples)
+            print(samples.shape)
+            # samples = s.reshape((self.n_sample, target.shape[0], *s.shape[1:]))
 
             y_pred.append(samples)
             y_real.append(target)

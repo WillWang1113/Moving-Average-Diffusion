@@ -61,7 +61,7 @@ class MLPBackbone(nn.Module):
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
         t = self.pe(t)
-        x = x + t
+        x = x * t
         if condition is not None:
             c = self.con_linear(condition)
             x = x + c

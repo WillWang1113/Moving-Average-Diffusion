@@ -94,6 +94,8 @@ Linear schedule, deterministic sampling, fast_sample
 | cnn_freq_norm_on_diff_off  | 0.032834 | 0.024736 | 0.030798 |
 | cnn_time_norm_on_diff_on   | 0.036176 | 0.026803 | 0.031058 |
 | cnn_time_norm_on_diff_off  | 0.035221 | 0.026047 | 0.030936 |
+
+
 | mlp_freq_norm_off_diff_on  | 0.085846 | 0.065210 | 0.067466 |
 | mlp_freq_norm_off_diff_off | 0.084568 | 0.062234 | 0.064756 |
 | mlp_time_norm_off_diff_on  | 0.089474 | 0.065595 | 0.067332 |

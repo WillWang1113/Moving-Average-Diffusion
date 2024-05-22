@@ -29,7 +29,7 @@ def main(config, run_args, n):
     data_fn = getattr(dataset, run_args["dataset"])
     train_dl, val_dl, test_dl, scaler = data_fn()
     if run_args["test"]:
-        config["train_config"]["epochs"] = 15
+        config["train_config"]["epochs"] = 10
 
     bb_, cn_, df_ = (
         config["bb_config"].pop("name"),
@@ -117,7 +117,7 @@ def main(config, run_args, n):
 
 if __name__ == "__main__":
     # FOR MY OWN EXPERIMENTS
-    args = {"dataset": "mfred", "num_train": 5, "test": True, "gpu": 0}
+    args = {"dataset": "mfred", "num_train": 1, "test": False, "gpu": 0}
 
     # for beta in [0, 1]:
     #     for bb_name in ["MLPBackbone", "ResNetBackbone"]:
@@ -137,7 +137,7 @@ if __name__ == "__main__":
     #                     main(config, args, i)
     
     config = yaml.safe_load(open("configs/default.yaml", "r"))
-    main(config, args, None)
+    main(config, args, 0)
 
     # parser = argparse.ArgumentParser()
     # parser.add_argument("-d", "--dataset", type=str, default="mfred")

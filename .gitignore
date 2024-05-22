@@ -161,6 +161,8 @@ cython_debug/
 
 nohup.out
 assets/
-notebooks/
+notebooks/test.ipynb
 runs/
 tests/
+./*.csv
+notebooks/test.ipynb

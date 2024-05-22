@@ -72,6 +72,7 @@ class Trainer:
         lr: float = 1e-3,
         alpha: float = 0,
         early_stop: int = -1,
+        val_step:int=1,
         device: str = "cpu",
         output_pth: str = "/home/user/data/FrequencyDiffusion/savings",
         **kwargs,
@@ -82,7 +83,8 @@ class Trainer:
         self.lr = lr
         self.optimizer = torch.optim.Adam(params=diffusion.get_params(), lr=lr)
         self.device = device
-        self.exp_name = kwargs.get("exp_name", datetime.now().strftime("%Y%m%d%H%M%S"))
+        self.exp_name = kwargs.get("exp_name")
+        self.exp_name +=  datetime.now().strftime("%Y%m%d%H%M%S")
 
         self.output_pth = output_pth
         self.early_stopper = (
@@ -92,6 +94,7 @@ class Trainer:
             if early_stop > 0
             else None
         )
+        self.val_step = val_step
 
     def train(self, train_dataloader, val_dataloader=None, epochs: int = None):
         writer = SummaryWriter(f"runs/{self.exp_name}")
@@ -125,14 +128,15 @@ class Trainer:
             train_loss /= len(train_dataloader)
 
             if val_dataloader is not None:
-                val_loss = self.eval(val_dataloader)
-                writer.add_scalars("loss", {"train": train_loss, "val": val_loss}, e)
+                if e % self.val_step == 0:
+                    val_loss = self.eval(val_dataloader)
+                    writer.add_scalars("loss", {"train": train_loss, "val": val_loss}, e)
 
-                if self.early_stopper is not None:
-                    self.early_stopper(val_loss, self.diffusion)
-                    if self.early_stopper.early_stop:
-                        print(f"Early Stop at Epoch {e+1}!\n")
-                        break
+                    if self.early_stopper is not None:
+                        self.early_stopper(val_loss, self.diffusion)
+                        if self.early_stopper.early_stop:
+                            print(f"Early Stop at Epoch {e+1}!\n")
+                            break
 
             else:
                 writer.add_scalar("train", train_loss, e)
