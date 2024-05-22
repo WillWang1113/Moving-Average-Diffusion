@@ -164,4 +164,3 @@ assets/
 notebooks/
 runs/
 tests/
-*.csv

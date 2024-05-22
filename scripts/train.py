@@ -11,10 +11,9 @@ from src.models import backbone, conditioner, diffusion
 from src.utils.train import Trainer, get_expname_
 import json
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-root_pth = "/home/user/data/FrequencyDiffusion/savings"
+root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
+# root_pth = "/home/user/data/FrequencyDiffusion/savings"
 fix_seed = 9
 random.seed(fix_seed)
 torch.manual_seed(fix_seed)
@@ -118,27 +117,27 @@ def main(config, run_args, n):
 
 if __name__ == "__main__":
     # FOR MY OWN EXPERIMENTS
-    args = {"dataset": "mfred", "num_train": 5, "test": False, "gpu": 0}
+    args = {"dataset": "mfred", "num_train": 5, "test": True, "gpu": 0}
 
-    for beta in [0, 1]:
-        for bb_name in ["MLPBackbone", "ResNetBackbone"]:
-            for freq in [True, False]:
-                for diff in [True, False]:
-                    n = 1 if args["test"] else args["num_train"]
-                    for i in range(n):
-                        config = yaml.safe_load(open("configs/default.yaml", "r"))
-                        config["bb_config"]["name"] = bb_name
-                        if bb_name == "ResNetBackbone":
-                            config["bb_config"]["hidden_size"] = 128
-                        config["diff_config"]["noise_kw"]["min_beta"] = beta
-                        config["diff_config"]["noise_kw"]["max_beta"] = beta
-                        config["diff_config"]["freq_kw"]["frequency"] = freq
-                        config["diff_config"]["freq_kw"]["real_imag"] = freq
-                        config["diff_config"]["fit_on_diff"] = diff
-                        main(config, args, i)
+    # for beta in [0, 1]:
+    #     for bb_name in ["MLPBackbone", "ResNetBackbone"]:
+    #         for freq in [True, False]:
+    #             for diff in [True, False]:
+    #                 n = 1 if args["test"] else args["num_train"]
+    #                 for i in range(n):
+    #                     config = yaml.safe_load(open("configs/default.yaml", "r"))
+    #                     config["bb_config"]["name"] = bb_name
+    #                     if bb_name == "ResNetBackbone":
+    #                         config["bb_config"]["hidden_size"] = 128
+    #                     config["diff_config"]["noise_kw"]["min_beta"] = beta
+    #                     config["diff_config"]["noise_kw"]["max_beta"] = beta
+    #                     config["diff_config"]["freq_kw"]["frequency"] = freq
+    #                     config["diff_config"]["freq_kw"]["real_imag"] = freq
+    #                     config["diff_config"]["fit_on_diff"] = diff
+    #                     main(config, args, i)
     
-    # config = yaml.safe_load(open("configs/default.yaml", "r"))
-    # main(config, args, None)
+    config = yaml.safe_load(open("configs/default.yaml", "r"))
+    main(config, args, None)
 
     # parser = argparse.ArgumentParser()
     # parser.add_argument("-d", "--dataset", type=str, default="mfred")

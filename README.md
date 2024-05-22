@@ -44,7 +44,7 @@ $$\mathbf{\tilde{x}}_{t-1} = \sqrt{\frac{\beta_{t-1}^2 - \sigma_t^2}{\beta_t^2}}
 When $\sigma_t = 0$, we have the deterministic sampling schedule:
 $$\frac{\mathbf{\tilde{x}}_{t-1}}{\beta_{t-1}} = \frac{\mathbf{\tilde{x}}_t}{\beta_t}  + \left(\frac{\mathbf{\tilde{K}}_{t-1}}{\beta_{t-1}} - \frac{\mathbf{\tilde{K}}_t}{\beta_t^2}\right) \mathbf{\tilde{x}}_0$$
 
-
+<!-- 
 $$\begin{aligned}
     q(\mathbf{\tilde{x}}_{t-1} | \mathbf{\tilde{x}}_t, \mathbf{\tilde{x}}_0) &= a \mathbf{\tilde{x}}_t + b \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime, \epsilon^\prime \sim \mathcal{C}\mathcal{N}(0, \mathbf{I}) \\
     &= a (\mathbf{\tilde{K}}_t \mathbf{\tilde{x}}_0 + \beta_t {\tilde{\epsilon}}) + b \mathbf{\tilde{x}}_0  + \sigma_t \epsilon^\prime \\
@@ -60,7 +60,7 @@ $$\begin{cases}
 \end{cases} \Rightarrow \begin{cases}
     a = \sqrt{(\beta_{t-1}^2 - \sigma_t^2)/{\beta_t^2}} \\
     b = \mathbf{\tilde{K}}_{t-1} - \sqrt{(\beta_{t-1}^2 - \sigma_t^2)/{\beta_t^2}} \mathbf{\tilde{K}}_t
-\end{cases}$$
+\end{cases}$$ -->
 
 
 ## Experiments
@@ -94,7 +94,6 @@ Linear schedule, deterministic sampling, fast_sample
 | cnn_freq_norm_on_diff_off  | 0.032834 | 0.024736 | 0.030798 |
 | cnn_time_norm_on_diff_on   | 0.036176 | 0.026803 | 0.031058 |
 | cnn_time_norm_on_diff_off  | 0.035221 | 0.026047 | 0.030936 |
-
 | mlp_freq_norm_off_diff_on  | 0.085846 | 0.065210 | 0.067466 |
 | mlp_freq_norm_off_diff_off | 0.084568 | 0.062234 | 0.064756 |
 | mlp_time_norm_off_diff_on  | 0.089474 | 0.065595 | 0.067332 |

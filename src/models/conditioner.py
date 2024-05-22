@@ -44,9 +44,9 @@ class MLPConditioner(BaseConditioner):
 
         self.norm = norm
         self.seq_channels = seq_channels
-        if norm:
-            self.mu_net = nn.Linear(latent_dim, 1 * seq_channels)
-            self.std_net = nn.Linear(latent_dim, 1 * seq_channels)
+        # if norm:
+        #     self.mu_net = nn.Linear(latent_dim, 1 * seq_channels)
+        #     self.std_net = nn.Linear(latent_dim, 1 * seq_channels)
 
     def forward(self, observed_data, future_features=None, **kwargs):
         x = observed_data
@@ -62,15 +62,15 @@ class MLPConditioner(BaseConditioner):
             trajs_to_encode = torch.concat([trajs_to_encode, ff.flatten(1)], axis=-1)
         out = self.input_enc(trajs_to_encode)
 
-        if self.norm:
-            mu = self.mu_net(out).reshape((-1, 1, self.seq_channels))
-            std = self.std_net(out).reshape((-1, 1, self.seq_channels))
-        else:
-            mu, std = (
-                torch.zeros((x.shape[0], 1, x.shape[-1]), device=x.device),
-                torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
-            )
-        return out, (mu, std)
+        # if self.norm:
+        #     mu = self.mu_net(out).reshape((-1, 1, self.seq_channels))
+        #     std = self.std_net(out).reshape((-1, 1, self.seq_channels))
+        # else:
+        #     mu, std = (
+        #         torch.zeros((x.shape[0], 1, x.shape[-1]), device=x.device),
+        #         torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
+        #     )
+        return out
 
 
 class RNNConditioner(nn.Module):

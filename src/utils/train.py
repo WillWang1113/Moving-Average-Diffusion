@@ -82,9 +82,7 @@ class Trainer:
         self.lr = lr
         self.optimizer = torch.optim.Adam(params=diffusion.get_params(), lr=lr)
         self.device = device
-        self.exp_name = kwargs.get(
-            "exp_name", datetime.now().strftime("%Y%m%d%H%M%S")
-        )
+        self.exp_name = kwargs.get("exp_name", datetime.now().strftime("%Y%m%d%H%M%S"))
 
         self.output_pth = output_pth
         self.early_stopper = (
@@ -187,7 +185,7 @@ def get_expname_(config, bb_name, cn_name=None, df_name=None):
     else:
         name += "time_"
 
-    name += f'norm_{diff_config['norm']}_diff_{diff_config['fit_on_diff']}_'
+    name += f"norm_{diff_config['norm']}_diff_{diff_config['fit_on_diff']}_"
 
     if (
         diff_config["noise_kw"]["min_beta"] == diff_config["noise_kw"]["max_beta"]
