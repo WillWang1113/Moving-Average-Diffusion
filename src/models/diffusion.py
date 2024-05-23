@@ -156,14 +156,13 @@ class MovingAvgDiffusion(BaseDiffusion):
         freq_kw={"frequency": False},
         # device="cpu",
         noise_kw={"name": "linear", "min_beta": 0.0, "max_beta": 0.0},
-        only_factor_step=False,
         norm=True,
         fit_on_diff=False,
-        mode="VE",
         lr=2e-4,
         **kwargs,
     ) -> None:
         super().__init__()
+        self.save_hyperparameters()
         self.backbone = build_backbone(backbone_config)
         self.conditioner = build_conditioner(conditioner_config)
         self.freq_kw = freq_kw
@@ -171,12 +170,10 @@ class MovingAvgDiffusion(BaseDiffusion):
 
         self.lr = lr
         # get int factors
-        middle_res = get_factors(seq_length) + [seq_length]
+        # middle_res = get_factors(seq_length) + [seq_length]
 
         # get 2,3,..., seq_length
-        factors = (
-            middle_res if only_factor_step else [i for i in range(2, seq_length + 1)]
-        )
+        factors = [i for i in range(2, seq_length + 1)]
         self.T = len(factors)
 
         if freq_kw["frequency"]:
@@ -202,12 +199,10 @@ class MovingAvgDiffusion(BaseDiffusion):
 
         self.norm = norm
         self.fit_on_diff = fit_on_diff
-        self.mode = mode
-        assert mode in ["VE", "VP"]
-        self.save_hyperparameters()
+
 
     def degrade(self, x: torch.Tensor, t: torch.Tensor):
-        alpha_ = 1.0 if self.mode == "VE" else self.alphas[t].unsqueeze(1).unsqueeze(1)
+        # alpha_ = 1.0 if self.mode == "VE" else self.alphas[t].unsqueeze(1).unsqueeze(1)
         self.freq_response = self.freq_response.to(x.device)
         self.betas = self.betas.to(x)
         if self.freq_kw["frequency"]:
@@ -219,7 +214,7 @@ class MovingAvgDiffusion(BaseDiffusion):
             x_filtered = x_complex * self.freq_response[t]
 
             # add noise if needed
-            x_filtered = alpha_ * x_filtered + self.betas[t].unsqueeze(1).unsqueeze(
+            x_filtered = x_filtered + self.betas[t].unsqueeze(1).unsqueeze(
                 1
             ) * torch.randn_like(x_filtered).to(self.device)
 
@@ -236,7 +231,7 @@ class MovingAvgDiffusion(BaseDiffusion):
                 x_n = self.degrade_fn[t[i]](x[[i], ...])
                 x_noisy.append(x_n)
             x_noisy = torch.concat(x_noisy)
-            x_noisy = x_noisy * alpha_ + self.betas[t].unsqueeze(1).unsqueeze(
+            x_noisy = x_noisy + self.betas[t].unsqueeze(1).unsqueeze(
                 1
             ) * torch.randn_like(x_noisy).to(self.device)
 

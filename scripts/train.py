@@ -1,18 +1,16 @@
-import argparse
+import json
 import os
 import random
-
+import yaml
 import numpy as np
 import torch
-import yaml
-
-from src.datamodule import dataset
-from src.models import backbone, conditioner, diffusion
-from src.utils.train import get_expname_
-import json
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
+from lightning.pytorch.callbacks import ModelCheckpoint
 
+from src.datamodule import dataset
+from src.models import diffusion
+from src.utils.train import get_expname_
 
 root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
 # root_pth = "/home/user/data/FrequencyDiffusion/savings"
@@ -24,7 +22,7 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 
-def main(config, run_args, n):
+def main(config, run_args):
     device = f"cuda:{run_args['gpu']}" if torch.cuda.is_available() else "cpu"
     print("Using: ", device)
 
@@ -34,15 +32,13 @@ def main(config, run_args, n):
         config["train_config"]["epochs"] = 5
 
     bb_, cn_, df_ = (
-        config["bb_config"].pop("name"),
-        config["cn_config"].pop("name"),
-        config["diff_config"].pop("name"),
+        config["bb_config"].get("name"),
+        config["cn_config"].get("name"),
+        config["diff_config"].get("name"),
     )
-
-    bb = getattr(backbone, bb_)
-    cn = getattr(conditioner, cn_, None)
     df = getattr(diffusion, df_)
-    exp_name = f"{get_expname_(config, bb_, cn_, df_)}{'t' if run_args['test'] else n}"
+
+    exp_name = f"{get_expname_(config, bb_, cn_, df_)}"
     # exp_name = f"{bb_}_{CONFIG['diff_config']}_{'t' if args.test else n}"
     print(exp_name)
     save_folder = os.path.join(
@@ -74,47 +70,27 @@ def main(config, run_args, n):
 
     print("\n")
     print("MODEL PARAM:")
+    config["bb_config"]["seq_channels"] = target_seq_channels
+    config["bb_config"]["seq_length"] = target_seq_length
+    config["bb_config"]["latent_dim"] = config["cn_config"]["latent_dim"]
 
-    bb_net = bb(
-        seq_channels=target_seq_channels,
-        seq_length=target_seq_length,
-        latent_dim=config["cn_config"]["latent_dim"],
-        **config["bb_config"],
-    )
-    print("Denoise Network:\t", sum([torch.numel(p) for p in bb_net.parameters()]))
-
-    if cn is not None:
-        cond_net = cn(
-            seq_channels=seq_channels,
-            seq_length=seq_length,
-            future_seq_channels=future_seq_channels,
-            future_seq_length=future_seq_length,
-            norm=config["diff_config"]["norm"],
-            **config["cn_config"],
-        )
-        print(
-            "Condition Network:\t", sum([torch.numel(p) for p in cond_net.parameters()])
-        )
-    else:
-        cond_net = None
-    print("\n")
+    config["cn_config"]["seq_channels"] = seq_channels
+    config["cn_config"]["seq_length"] = seq_length
+    config["cn_config"]["future_seq_channels"] = future_seq_channels
+    config["cn_config"]["future_seq_length"] = future_seq_length
 
     diff = df(
-        backbone=bb_net,
-        conditioner=cond_net,
-        device=device,
+        backbone_config=config["bb_config"],
+        conditioner_config=config["cn_config"],
         **config["diff_config"],
     )
 
-    # trainer = Trainer(
-    #     diffusion=diff,
-    #     device=device,
-    #     output_pth=save_folder,
-    #     exp_name=exp_name,
-    #     **config["train_config"],
-    # )
-    # # trainer.train(train_dl)
-    # trainer.train(train_dl, val_dl)
+    checkpoint_callback = ModelCheckpoint(
+        save_top_k=3,
+        monitor="val_loss",
+        mode="min",
+        filename="{epoch:02d}-{val_loss:.4f}",
+    )
     trainer = Trainer(
         accelerator="gpu",
         devices=1,
@@ -127,9 +103,11 @@ def main(config, run_args, n):
                 patience=3,
                 verbose=False,
                 mode="min",
-            )
+            ),
+            checkpoint_callback,
         ],
-        # fast_dev_run=run_args["test"]
+        default_root_dir=save_folder,
+        # fast_dev_run=True
     )
     trainer.fit(
         diff,
@@ -138,7 +116,6 @@ def main(config, run_args, n):
     )
     # diff.configure_sampling()
     # preds = trainer.predict(diff, test_dl)
-    
 
 
 if __name__ == "__main__":
@@ -163,7 +140,7 @@ if __name__ == "__main__":
     #                     main(config, args, i)
 
     config = yaml.safe_load(open("configs/default.yaml", "r"))
-    main(config, args, 0)
+    main(config, args)
     # config = yaml.safe_load(open("configs/default.yaml", "r"))
     # main(config, args, 1)
 

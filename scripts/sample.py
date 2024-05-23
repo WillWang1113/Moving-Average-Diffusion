@@ -155,8 +155,8 @@ if __name__ == "__main__":
     # main()
     trainer = Trainer(fast_dev_run=True, accelerator='gpu', devices=1)
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
-    ckpt = torch.load("lightning_logs/version_0/checkpoints/epoch=4-step=2800.ckpt")
-    diff = MovingAvgDiffusion(**ckpt['hyper_parameters'])
+    # ckpt = torch.load("lightning_logs/version_0/checkpoints/epoch=4-step=2800.ckpt")
+    diff = MovingAvgDiffusion.load_from_checkpoint("lightning_logs/version_3/checkpoints/epoch=2-step=1680.ckpt")
     
     # bb = encoder_weights = {k: v for k, v in ckpt["state_dict"].items() if k.startswith("backbone")}
     # print(bb)
