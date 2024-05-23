@@ -1,18 +1,30 @@
+import sys
+from typing import List, Tuple, Union
+
 import torch
-from typing import List, Union, Tuple
 from torch import nn
 from torchvision.ops import MLP
-from .embedding import SinusoidalPosEmb
+
 from .blocks import (
     CMLP,
     ComplexRELU,
-    UpBlock,
     DownBlock,
-    MiddleBlock,
     Downsample,
-    Upsample,
+    MiddleBlock,
     ResidualBlock,
+    UpBlock,
+    Upsample,
 )
+from .embedding import SinusoidalPosEmb
+
+thismodule = sys.modules[__name__]
+
+
+# TODO: build backbone function
+def build_backbone(bb_config):
+    bb_config_c = bb_config.copy()
+    bb_net = getattr(thismodule, bb_config_c.pop("name"))
+    return bb_net(**bb_config_c)
 
 
 class MLPBackbone(nn.Module):
@@ -27,8 +39,7 @@ class MLPBackbone(nn.Module):
         hidden_size: int,
         latent_dim: int,
         n_layers: int = 3,
-        norm:bool = False,
-        **kwargs,
+        norm: bool = False,
     ) -> None:
         """
         * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
@@ -57,7 +68,7 @@ class MLPBackbone(nn.Module):
             self.con_linear = nn.Linear(latent_dim, hidden_size)
         else:
             self.con_linear = nn.Identity()
-            
+
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
         t = self.pe(t)
@@ -70,9 +81,6 @@ class MLPBackbone(nn.Module):
         x = self.unembedder(x).reshape((-1, self.seq_length, self.seq_channels))
         return x
 
-    
-
-
 
 class CMLPBackbone(torch.nn.Module):
     def __init__(
@@ -80,8 +88,12 @@ class CMLPBackbone(torch.nn.Module):
     ) -> None:
         super().__init__()
         self.fft_len = seq_length
-        self.embedder = nn.Linear(seq_channels * self.fft_len, hidden_size).to(torch.cfloat)
-        self.unembedder = nn.Linear(hidden_size, seq_channels * self.fft_len).to(torch.cfloat)
+        self.embedder = nn.Linear(seq_channels * self.fft_len, hidden_size).to(
+            torch.cfloat
+        )
+        self.unembedder = nn.Linear(hidden_size, seq_channels * self.fft_len).to(
+            torch.cfloat
+        )
         self.pe = SinusoidalPosEmb(hidden_size)
         self.net = nn.ModuleList(  # type: ignore
             [
@@ -93,7 +105,7 @@ class CMLPBackbone(torch.nn.Module):
                 for _ in range(n_layers)
             ]
         )
-        
+
         self.seq_channals = seq_channels
         self.seq_length = seq_length
         if hidden_size != latent_dim:
@@ -198,12 +210,14 @@ class FreqLinear(torch.nn.Module):
             -1, self.rfft_len, self.seq_channels
         )  # [bs, rfft_len, dim]
         x = torch.fft.irfft(x, norm="ortho", dim=1)
-        
+
         return x
 
 
 class ResNetBackbone(nn.Module):
-    def __init__(self, seq_channels, seq_length, hidden_size, latent_dim, **kwargs) -> None:
+    def __init__(
+        self, seq_channels, seq_length, hidden_size, latent_dim, **kwargs
+    ) -> None:
         super().__init__()
         self.block1 = ResidualBlock(seq_channels, hidden_size, hidden_size)
         self.block2 = torch.nn.AvgPool1d(2, 2)
@@ -217,7 +231,6 @@ class ResNetBackbone(nn.Module):
             self.con_linear = nn.Linear(latent_dim, hidden_size)
         else:
             self.con_linear = nn.Identity()
-
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition=None):
         t = self.time_emb(t)

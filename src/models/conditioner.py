@@ -1,7 +1,18 @@
+import abc
+import sys
+
 import torch
 from torch import nn
 from torchvision.ops import MLP
-import abc
+
+thismodule = sys.modules[__name__]
+
+
+# TODO: build backbone function
+def build_conditioner(cn_config):
+    cn_config_c = cn_config.copy()
+    cn_net = getattr(thismodule, cn_config_c.pop("name"))
+    return cn_net(**cn_config_c)
 
 
 class BaseConditioner(nn.Module, abc.ABC):
@@ -44,32 +55,16 @@ class MLPConditioner(BaseConditioner):
 
         self.norm = norm
         self.seq_channels = seq_channels
-        # if norm:
-        #     self.mu_net = nn.Linear(latent_dim, 1 * seq_channels)
-        #     self.std_net = nn.Linear(latent_dim, 1 * seq_channels)
 
     def forward(self, observed_data, future_features=None, **kwargs):
         x = observed_data
         trajs_to_encode = x.flatten(1)  # (batch_size, input_ts, input_dim)
-
-        # # TEST: frequency encoding
-        # freq_component = torch.fft.rfft(observed_data, dim=1).flatten(1)
-        # theta, phi = complex2sphere(freq_component.real, freq_component.imag)
-        # trajs_to_encode = torch.concat([theta, phi, trajs_to_encode], dim=-1)
 
         if future_features is not None:
             ff = future_features
             trajs_to_encode = torch.concat([trajs_to_encode, ff.flatten(1)], axis=-1)
         out = self.input_enc(trajs_to_encode)
 
-        # if self.norm:
-        #     mu = self.mu_net(out).reshape((-1, 1, self.seq_channels))
-        #     std = self.std_net(out).reshape((-1, 1, self.seq_channels))
-        # else:
-        #     mu, std = (
-        #         torch.zeros((x.shape[0], 1, x.shape[-1]), device=x.device),
-        #         torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
-        #     )
         return out
 
 

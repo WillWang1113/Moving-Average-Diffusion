@@ -4,12 +4,13 @@ import torch
 import numpy as np
 import os
 import glob
+from src.models.diffusion import MovingAvgDiffusion
 from src.utils.filters import get_factors
 from src.utils.train import setup_seed
 from src.utils.sample import Sampler, plot_fcst, temporal_avg
 from src.utils.metrics import calculate_metrics
 import matplotlib.pyplot as plt
-
+from lightning import Trainer
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
 # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
@@ -45,6 +46,7 @@ kernel_size += [1]
 print(kernel_size)
 # print(exp_path)
 
+
 def main():
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
 
@@ -55,7 +57,7 @@ def main():
         scaler = np.load(f, allow_pickle="TRUE").item()
 
     df_out = []
-    exp_dirs = glob.glob(exp_path+"/*Backbone*")
+    exp_dirs = glob.glob(exp_path + "/*Backbone*")
     # exp_dirs = glob.glob("*Backbone*", root_dir=exp_path)
     # exp_dirs.sort()
     exp_dirs = [e[:-2] for e in exp_dirs]
@@ -136,7 +138,7 @@ def main():
             avg_m.mean(axis=0, keepdims=False if collect_all else True),
             columns=["RMSE", "MAE", "CRPS"],
         )
-        df["method"] = d.split('/')[-1]
+        df["method"] = d.split("/")[-1]
         df["granularity"] = kernel_size if collect_all else 1
         df_out.append(df)
 
@@ -150,4 +152,24 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    trainer = Trainer(fast_dev_run=True, accelerator='gpu', devices=1)
+    test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
+    ckpt = torch.load("lightning_logs/version_0/checkpoints/epoch=4-step=2800.ckpt")
+    diff = MovingAvgDiffusion(**ckpt['hyper_parameters'])
+    
+    # bb = encoder_weights = {k: v for k, v in ckpt["state_dict"].items() if k.startswith("backbone")}
+    # print(bb)
+    # # print(ckpt["state_dict"])
+    # diff = MovingAvgDiffusion.load_from_checkpoint(
+    #     "lightning_logs/version_4/checkpoints/epoch=4-step=2800.ckpt",
+    #     hparams_file="lightning_logs/version_4/hparams.yaml",
+    # )
+    diff.configure_sampling()
+    preds = trainer.predict(diff, dataloaders=test_dl)
+    preds = torch.stack(preds)
+    plt.plot(preds[0,0])
+    plt.savefig('assets/test.png')
+    # print(preds.shape)
+    # y_pred, y_real = temporal_avg(preds, y_real, kernel_size, kind)
+    

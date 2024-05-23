@@ -19,7 +19,7 @@ diff_config:
     min_beta: 1.0e-4
     max_beta: 2.0e-2
   norm: on
-  fit_on_diff: off
+  fit_on_diff: on
   mode: VE
 
 train_config:

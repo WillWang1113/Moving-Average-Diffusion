@@ -8,8 +8,10 @@ import yaml
 
 from src.datamodule import dataset
 from src.models import backbone, conditioner, diffusion
-from src.utils.train import Trainer, get_expname_
+from src.utils.train import get_expname_
 import json
+from lightning import Trainer
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 
 
 root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
@@ -29,7 +31,7 @@ def main(config, run_args, n):
     data_fn = getattr(dataset, run_args["dataset"])
     train_dl, val_dl, test_dl, scaler = data_fn()
     if run_args["test"]:
-        config["train_config"]["epochs"] = 10
+        config["train_config"]["epochs"] = 5
 
     bb_, cn_, df_ = (
         config["bb_config"].pop("name"),
@@ -58,16 +60,16 @@ def main(config, run_args, n):
     torch.save(test_dl, os.path.join(root_pth, run_args["dataset"], "test_dl.pt"))
     batch = next(iter(train_dl))
     seq_length, seq_channels = (
-        batch["observed_data"].shape[1],
-        batch["observed_data"].shape[2],
+        batch["conditions"]["observed_data"].shape[1],
+        batch["conditions"]["observed_data"].shape[2],
     )
     target_seq_length, target_seq_channels = (
         batch["future_data"].shape[1],
         batch["future_data"].shape[2],
     )
     future_seq_length, future_seq_channels = (
-        batch["future_features"].shape[1],
-        batch["future_features"].shape[2],
+        batch["conditions"]["future_features"].shape[1],
+        batch["conditions"]["future_features"].shape[2],
     )
 
     print("\n")
@@ -104,20 +106,44 @@ def main(config, run_args, n):
         **config["diff_config"],
     )
 
+    # trainer = Trainer(
+    #     diffusion=diff,
+    #     device=device,
+    #     output_pth=save_folder,
+    #     exp_name=exp_name,
+    #     **config["train_config"],
+    # )
+    # # trainer.train(train_dl)
+    # trainer.train(train_dl, val_dl)
     trainer = Trainer(
-        diffusion=diff,
-        device=device,
-        output_pth=save_folder,
-        exp_name=exp_name,
-        **config["train_config"],
+        accelerator="gpu",
+        devices=1,
+        max_epochs=config["train_config"]["epochs"],
+        check_val_every_n_epoch=1,
+        callbacks=[
+            EarlyStopping(
+                monitor="val_loss",
+                min_delta=0.00,
+                patience=3,
+                verbose=False,
+                mode="min",
+            )
+        ],
+        # fast_dev_run=run_args["test"]
     )
-    # trainer.train(train_dl)
-    trainer.train(train_dl, val_dl)
+    trainer.fit(
+        diff,
+        train_dataloaders=train_dl,
+        val_dataloaders=val_dl,
+    )
+    # diff.configure_sampling()
+    # preds = trainer.predict(diff, test_dl)
+    
 
 
 if __name__ == "__main__":
     # FOR MY OWN EXPERIMENTS
-    args = {"dataset": "mfred", "num_train": 1, "test": False, "gpu": 0}
+    args = {"dataset": "mfred", "num_train": 1, "test": True, "gpu": 0}
 
     # for beta in [0, 1]:
     #     for bb_name in ["MLPBackbone", "ResNetBackbone"]:
@@ -135,9 +161,11 @@ if __name__ == "__main__":
     #                     config["diff_config"]["freq_kw"]["real_imag"] = freq
     #                     config["diff_config"]["fit_on_diff"] = diff
     #                     main(config, args, i)
-    
+
     config = yaml.safe_load(open("configs/default.yaml", "r"))
     main(config, args, 0)
+    # config = yaml.safe_load(open("configs/default.yaml", "r"))
+    # main(config, args, 1)
 
     # parser = argparse.ArgumentParser()
     # parser.add_argument("-d", "--dataset", type=str, default="mfred")
