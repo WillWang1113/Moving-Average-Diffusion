@@ -169,7 +169,6 @@ class MovingAvgDiffusion(BaseDiffusion):
         only_factor_step=False,
         norm=True,
         fit_on_diff=False,
-        mode="VE",
     ) -> None:
         self.backbone = backbone.to(device)
         self.conditioner = conditioner
@@ -215,12 +214,9 @@ class MovingAvgDiffusion(BaseDiffusion):
 
         self.norm = norm
         self.fit_on_diff = fit_on_diff
-        self.mode = mode
-        assert mode in ["VE", "VP"]
 
     @torch.no_grad
     def forward(self, x: torch.Tensor, t: torch.Tensor):
-        alpha_ = 1.0 if self.mode == "VE" else self.alphas[t].unsqueeze(1).unsqueeze(1)
 
         if self.freq_kw["frequency"]:
             x_complex = dft(x, real_imag=False)
@@ -231,7 +227,7 @@ class MovingAvgDiffusion(BaseDiffusion):
             x_filtered = x_complex * self.freq_response[t]
 
             # add noise if needed
-            x_filtered = alpha_ * x_filtered + self.betas[t].unsqueeze(1).unsqueeze(
+            x_filtered = x_filtered + self.betas[t].unsqueeze(1).unsqueeze(
                 1
             ) * torch.randn_like(x_filtered).to(self.device)
 
@@ -248,7 +244,7 @@ class MovingAvgDiffusion(BaseDiffusion):
                 x_n = self.degrade_fn[t[i]](x[[i], ...])
                 x_noisy.append(x_n)
             x_noisy = torch.concat(x_noisy)
-            x_noisy = x_noisy * alpha_ + self.betas[t].unsqueeze(1).unsqueeze(
+            x_noisy = x_noisy + self.betas[t].unsqueeze(1).unsqueeze(
                 1
             ) * torch.randn_like(x_noisy).to(self.device)
 
@@ -265,8 +261,6 @@ class MovingAvgDiffusion(BaseDiffusion):
         if c.shape[0] != x.shape[0]:
             print("extending")
             c = c.repeat(x.shape[0] // c.shape[0], 1)
-            # mu = mu.repeat(x.shape[0] // mu.shape[0], 1, 1)
-            # std = std.repeat(x.shape[0] // std.shape[0], 1, 1)
 
         # get denoise steps (DDIM/full)
         iter_T = self.sample_Ts
@@ -278,15 +272,6 @@ class MovingAvgDiffusion(BaseDiffusion):
             t = iter_T[i]
             t_tensor = torch.tensor(t, device=x.device).repeat(x.shape[0])
 
-            # # TODO: correct normalize when backward!
-            # if self.norm:
-            #     mean = torch.mean(x, dim=1, keepdim=True)
-            #     stdev = torch.sqrt(
-            #         torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5
-            #     )
-            #     x_norm = (x - mean) / stdev
-            # else:
-            #     x_norm = x
             x_norm, _ = self._normalize(x)
 
             if self.freq_kw["frequency"]:
@@ -296,10 +281,9 @@ class MovingAvgDiffusion(BaseDiffusion):
             x_hat = self.backbone(x_norm, t_tensor, c)
             if self.fit_on_diff:
                 x_hat = x_hat + x_norm
-                
 
-            x_hat, (mu, std) = self._normalize(x_hat, freq=self.freq_kw["frequency"])
-            
+            x_hat_norm, _ = self._normalize(x_hat, freq=self.freq_kw["frequency"])
+
             # fig, ax = plt.subplots()
             # if self.freq_kw['frequency']:
             #     x_plot = idft(x_hat, real_imag=True)
@@ -316,14 +300,15 @@ class MovingAvgDiffusion(BaseDiffusion):
             if self.freq_kw["frequency"]:
                 x = dft(x)
                 # x = real_imag_to_complex_freq(x) if self.freq_kw["real_imag"] else x
-                x_hat = (
-                    real_imag_to_complex_freq(x_hat)
+                x_hat_norm = (
+                    real_imag_to_complex_freq(x_hat_norm)
                     if self.freq_kw["real_imag"]
-                    else x_hat
+                    else x_hat_norm
                 )
 
             if t == 0:
-                x = x_hat + torch.randn_like(x_hat) * self.sigmas[t]
+                x = x_hat_norm + torch.randn_like(x_hat_norm) * self.sigmas[t]
+                prev_t = None
             else:
                 # calculate coeffs
                 prev_t = iter_T[i + 1]
@@ -334,11 +319,9 @@ class MovingAvgDiffusion(BaseDiffusion):
                 # sigma = self.betas[prev_t]
                 x = (
                     x * coeff
-                    + self.degrade_fn[prev_t](x_hat)
-                    - self.degrade_fn[t](x_hat) * coeff
+                    + self.degrade_fn[prev_t](x_hat_norm)
+                    - self.degrade_fn[t](x_hat_norm) * coeff
                 )
-
-                
 
                 x = x + torch.randn_like(x) * sigma
 
@@ -347,11 +330,11 @@ class MovingAvgDiffusion(BaseDiffusion):
                 x = idft(x, real_imag=False)
                 # x_hat = idft(x_hat, **self.freq_kw)
             if collect_all:
-                all_x.append(x)
-                all_x[i] = all_x[i] * std + mu
+                _, (mu, std) = self._normalize(x_hat, freq=self.freq_kw["frequency"], t=prev_t)
+                all_x.append(x * std + mu)
 
         if collect_all:
-            all_x[-1] = all_x[-1] * std + mu
+            all_x[0] = all_x[0] + mu
             all_x = torch.stack(all_x, dim=-1)
             # x_ts = [idft(x_t) for x_t in x_ts]
         return x * std + mu if not collect_all else all_x
@@ -362,15 +345,6 @@ class MovingAvgDiffusion(BaseDiffusion):
         # sample t, x_T
         t = torch.randint(0, self.T, (batch_size,)).to(self.device)
 
-        # if self.norm:
-        #     mean = torch.mean(x, dim=1, keepdim=True)
-        #     stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5)
-        # else:
-        #     mean, stdev = (
-        #         torch.zeros((x.shape[0], 1, x.shape[-1]), device=x.device),
-        #         torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
-        #     )
-        # x_norm = (x - mean) / stdev
         x_norm, _ = self._normalize(x)
 
         # corrupt data
@@ -390,11 +364,6 @@ class MovingAvgDiffusion(BaseDiffusion):
         x_hat = self.backbone(x_noisy, t, c)
         if self.fit_on_diff:
             x_hat = x_hat + x_noisy
-        # if self.freq_kw['frequency']:
-        #     x_hat = x_hat * std
-        #     x_hat[:,[0],:] = x_hat[:,[0],:] + mu * self.seq_length**0.5
-        # else:
-        #     x_hat = x_hat * std + mu
 
         # compute loss
         if self.freq_kw["frequency"]:
@@ -444,7 +413,6 @@ class MovingAvgDiffusion(BaseDiffusion):
             c = self.conditioner(**condition)
         else:
             c = None
-            # mu, std = None, None
         return c
 
     def get_params(self):
@@ -458,35 +426,46 @@ class MovingAvgDiffusion(BaseDiffusion):
             list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
         )
         self.sigmas = sigmas
-            
+
         for i in range(len(self.sample_Ts) - 1):
             t = self.sample_Ts[i]
             prev_t = self.sample_Ts[i + 1]
-            
+
             assert self.betas[prev_t] >= self.sigmas[t]
 
-    def _normalize(self, x, freq=False):
-        if freq:
-            x_time = idft(x, **self.freq_kw)
-        else:
-            x_time = x
+    def _normalize(self, x, freq=False, t=None):
+        if t is not None:
+            if freq:
+                x_ = self.degrade_fn[t](real_imag_to_complex_freq(x))
+                x_ = complex_freq_to_real_imag(x_)
+            else:
+                x_ = self.degrade_fn[t](x)
 
-        if self.norm:
+            if freq:
+                x_time = idft(x_, **self.freq_kw)
+            else:
+                x_time = x_
+
             mean = torch.mean(x_time, dim=1, keepdim=True)
             stdev = torch.sqrt(
                 torch.var(x_time, dim=1, keepdim=True, unbiased=False) + 1e-5
             )
-        else:
-            mean, stdev = (
-                torch.zeros(
-                    (x_time.shape[0], 1, x_time.shape[-1]), device=x_time.device
-                ),
-                torch.ones(
-                    (x_time.shape[0], 1, x_time.shape[-1]), device=x_time.device
-                ),
-            )
-        x_norm = (x_time - mean) / stdev
 
-        if freq:
-            x_norm = dft(x_norm, **self.freq_kw)
-        return x_norm, (mean, stdev)
+            # x_norm = (x_time - mean) / stdev
+            return None, (mean, stdev)
+        else:
+            if freq:
+                x_time = idft(x, **self.freq_kw)
+            else:
+                x_time = x
+
+            mean = torch.mean(x_time, dim=1, keepdim=True)
+            stdev = torch.sqrt(
+                torch.var(x_time, dim=1, keepdim=True, unbiased=False) + 1e-5
+            )
+
+            x_norm = (x_time - mean) / stdev
+
+            if freq:
+                x_norm = dft(x_norm, **self.freq_kw)
+            return x_norm, (mean, stdev)

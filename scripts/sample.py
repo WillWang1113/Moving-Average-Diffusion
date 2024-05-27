@@ -67,7 +67,7 @@ def main():
         # for d in exp_dirs:
         avg_m = []
         for i in range(num_training):
-            # i = 't'
+            i = 't'
             read_d = os.path.join(exp_path, d + f"_{i}", "diffusion.pt")
             print(read_d)
             kind = d.split("_")[1]
@@ -100,9 +100,11 @@ def main():
             print(diff.sigmas)
 
             # PLOT WEIGHTS
-            # cn = diff.conditioner
-            # for name, p in cn.named_parameters():
-            #     print(name, p[0])
+            cn = diff.backbone
+            for name, p in cn.named_parameters():
+                print(name, p[0])
+                break
+            
             # if name.__contains__('weight'):
             #     fig, ax = plt.subplots()
             #     pos = ax.imshow(p.detach().cpu().numpy(), cmap='RdBu')

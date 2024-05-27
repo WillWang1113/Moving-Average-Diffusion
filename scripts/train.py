@@ -117,7 +117,7 @@ def main(config, run_args, n):
 
 if __name__ == "__main__":
     # FOR MY OWN EXPERIMENTS
-    args = {"dataset": "mfred", "num_train": 1, "test": False, "gpu": 0}
+    args = {"dataset": "mfred", "num_train": 1, "test": True, "gpu": 0}
 
     # for beta in [0, 1]:
     #     for bb_name in ["MLPBackbone", "ResNetBackbone"]:
