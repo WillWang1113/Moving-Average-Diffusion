@@ -29,7 +29,7 @@ def main(config, run_args):
     data_fn = getattr(dataset, run_args["dataset"])
     train_dl, val_dl, test_dl, scaler = data_fn()
     if run_args["test"]:
-        config["train_config"]["epochs"] = 5
+        config["train_config"]["epochs"] = 10
 
     bb_, cn_, df_ = (
         config["bb_config"].get("name"),
@@ -86,7 +86,8 @@ def main(config, run_args):
     )
 
     checkpoint_callback = ModelCheckpoint(
-        save_top_k=3,
+        # save_top_k=3,
+        save_last=True,
         monitor="val_loss",
         mode="min",
         filename="{epoch:02d}-{val_loss:.4f}",
@@ -103,11 +104,12 @@ def main(config, run_args):
                 patience=3,
                 verbose=False,
                 mode="min",
-            ),
-            checkpoint_callback,
+            )
+            # checkpoint_callback,
         ],
         default_root_dir=save_folder,
         # fast_dev_run=True
+        deterministic=True, benchmark=True
     )
     trainer.fit(
         diff,

@@ -153,11 +153,17 @@ def main():
 
 if __name__ == "__main__":
     # main()
-    trainer = Trainer(fast_dev_run=True, accelerator='gpu', devices=1)
+    trainer = Trainer(fast_dev_run=True, accelerator="gpu", devices=1)
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
     # ckpt = torch.load("lightning_logs/version_0/checkpoints/epoch=4-step=2800.ckpt")
-    diff = MovingAvgDiffusion.load_from_checkpoint("lightning_logs/version_3/checkpoints/epoch=2-step=1680.ckpt")
-    
+    diff = MovingAvgDiffusion.load_from_checkpoint(
+        "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/mfred/MovingAvgDiffusion/MLPBackbone_freq_norm_True_diff_True_hot_/lightning_logs/version_4/checkpoints/epoch=9-step=5600.ckpt"
+    )
+    # diff = MovingAvgDiffusion.load_from_checkpoint("lightning_logs/version_3/checkpoints/epoch=2-step=1680.ckpt")
+    cn = diff.backbone
+    for name, p in cn.named_parameters():
+        print(name, p[0])
+        break
     # bb = encoder_weights = {k: v for k, v in ckpt["state_dict"].items() if k.startswith("backbone")}
     # print(bb)
     # # print(ckpt["state_dict"])
@@ -165,11 +171,10 @@ if __name__ == "__main__":
     #     "lightning_logs/version_4/checkpoints/epoch=4-step=2800.ckpt",
     #     hparams_file="lightning_logs/version_4/hparams.yaml",
     # )
-    diff.configure_sampling()
-    preds = trainer.predict(diff, dataloaders=test_dl)
-    preds = torch.stack(preds)
-    plt.plot(preds[0,0])
-    plt.savefig('assets/test.png')
+    # diff.configure_sampling()
+    # preds = trainer.predict(diff, dataloaders=test_dl)
+    # preds = torch.stack(preds)
+    # plt.plot(preds[0,0])
+    # plt.savefig('assets/test.png')
     # print(preds.shape)
     # y_pred, y_real = temporal_avg(preds, y_real, kernel_size, kind)
-    
