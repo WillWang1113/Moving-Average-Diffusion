@@ -69,3 +69,7 @@ def calculate_metrics(
         return all_res_metric
     else:
         raise ValueError("wrong y_pred shape")
+
+
+def get_bench_metrics():
+    pass

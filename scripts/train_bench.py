@@ -1,83 +1,96 @@
-import argparse
+import logging
 import os
-import random
 
+from matplotlib import pyplot as plt
 import numpy as np
-import torch
+import pandas as pd
+from neuralforecast import NeuralForecast
+from neuralforecast.models import NHITS, TFT, Autoformer, FEDformer, LSTM, MLP, NBEATSx, DeepAR
+from neuralforecast.losses.pytorch import MQLoss, DistributionLoss
+from neuralforecast.losses.numpy import mqloss
+from src.utils.metrics import calculate_metrics, get_bench_metrics
 
-from src.datamodule import dataset
-from src.models import backbone, conditioner, diffusion
-from src.utils.train import Trainer
-import json
-from src.models.benchmarks import DLinear
-
-
-root_pth = "/home/user/data/FrequencyDiffusion/savings"
-fix_seed = 9
-random.seed(fix_seed)
-torch.manual_seed(fix_seed)
-np.random.seed(fix_seed)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-
-def main(args, n):
-    device = f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu"
-    print("Using: ", device)
-
-    data_fn = getattr(dataset, args.dataset)
-    train_dl, val_dl, test_dl, CONFIG, scaler = data_fn(args.setting)
-    
-    batch = next(iter(train_dl))
-    seq_length, seq_channels = (
-        batch["observed_data"].shape[1],
-        batch["observed_data"].shape[2],
-    )
-    target_seq_length, target_seq_channels = (
-        batch["future_data"].shape[1],
-        batch["future_data"].shape[2],
-    )
-    future_seq_length, future_seq_channels = (
-        batch["future_features"].shape[1],
-        batch["future_features"].shape[2],
-    )
-    model = DLinear(
-        seq_channels=seq_channels,
-        seq_length=seq_length,
-        future_seq_channels=future_seq_channels,
-        future_seq_length=future_seq_length,
-    ).to(device)
-    
-    exp_name = f"{model._get_name()}_{'t' if args.test else n}"
-
-    save_folder = os.path.join(
-        root_pth,
-        args.dataset,
-        'benchmarks',
-        exp_name,
-    )
-    os.makedirs(save_folder, exist_ok=True)
-    
-    trainer = Trainer(
-        diffusion=model,
-        device=device,
-        output_pth=save_folder,
-        exp_name=exp_name,
-        **CONFIG["train_config"],
-    )
-    trainer.train(train_dl, val_dl)
-    
+logging.getLogger("pytorch_lightning").setLevel(logging.WARNING)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--dataset", type=str, default="mfred")
-    parser.add_argument("-n", "--num_train", type=int, default=5)
-    parser.add_argument("-s", "--setting", type=str, default="default_mfred")
-    parser.add_argument("-t", "--test", action="store_true")
-    parser.add_argument("--gpu", type=int, default=0)
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 
-    args = parser.parse_args()
-    n = 1 if args.test else args.num_train
-    for i in range(n):
-        main(args, i)
+df = pd.read_csv(
+    "/home/user/data/FrequencyDiffusion/dataset/MFRED_clean.csv",
+    index_col=0,
+    parse_dates=True,
+)
+# df['ds'] = df.index
+df = df.drop(columns=["weekday", "hour"])
+df["unique_id"] = 1.0
+df = df.reset_index()
+n_series = len(df.unique_id.unique())
+
+quantiles = [0.05 * (q + 1) for q in range(19)]
+horizon = 288
+config = {
+    "h": horizon,
+    "input_size": horizon,
+    "max_steps": 300,
+    # "loss": MQLoss(quantiles=quantiles),
+    "loss": DistributionLoss(quantiles=quantiles),
+    "futr_exog_list": ["t2m"],
+    "early_stop_patience_steps": 5,
+    "val_check_steps": 10,
+    "inference_windows_batch_size": 1024,
+    "windows_batch_size": 512,
+    "scaler_type":'standard'
+}
+
+models = [
+    # MLP(**config),
+    # NHITS(**config),
+    # NBEATSx(**config),
+    # TFT(**config),
+    # Autoformer(**config),
+    # FEDformer(**config),
+    DeepAR(**config)
+]
+model_names = [m._get_name() for m in models]
+nf = NeuralForecast(models=models, freq="5min")
+
+Y_hat_df = nf.cross_validation(
+    df=df,
+    val_size=int(len(df) * 0.8 / 7),
+    test_size=21599 - 288,
+    target_col="value",
+    n_windows=None,
+)
+# Y_hat_df.to_csv('/home/user/data/FrequencyDiffusion/savings/mfred/benchmarks.csv')
+cols = Y_hat_df.columns.tolist()
+y_true = Y_hat_df.value.values.reshape(-1, horizon, n_series)
+
+for i, m in enumerate(model_names):
+    model_cols = [c for c in cols if m in c]
+
+    y_hat = Y_hat_df[model_cols].values
+    y_hat = y_hat.reshape(-1, horizon, n_series, len(quantiles))
+    # y_hat = y_hat.sort(axis=-1)
+
+    (RMSE, MAE, PBL) = get_bench_metrics(y_hat, y_true, quantiles=np.array(quantiles))
+
+    print(m)
+    print((RMSE, MAE, PBL))
+    # fig, ax = plt.subplots()
+    # ax.plot(y_true[127])
+    # ax.plot(y_hat[127].squeeze())
+    # fig.savefig("test.png")
+
+
+# y_true = y_true.reshape(n_series, -1, horizon).transpose(1, 2, 0)
+# y_hat = y_hat.reshape(n_series, -1, horizon).transpose(1, 2, 0)
+
+# print("\n" * 4)
+# print("Parsed results")
+# print("y_true.shape (n_series, n_windows, n_time_out):\t", y_true.shape)
+# print("y_hat.shape  (n_series, n_windows, n_time_out):\t", y_hat.shape)
+
+# # # print('MSE: ', mse(y_hat, y_true))
+# print("MAE: ", mae(y_hat, y_true))
