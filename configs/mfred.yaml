@@ -8,3 +8,4 @@ col_out:
   - t2m
 batch_size: 128
 scale: on
+frequency: on

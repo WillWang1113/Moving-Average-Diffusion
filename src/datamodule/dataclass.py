@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from ..utils.fourier import dft
 
 
 class TimeSeries(Dataset):
@@ -14,7 +15,7 @@ class TimeSeries(Dataset):
         shift: int,
         col_in: list,
         col_out: list,
-        freq_kw={"frequency": False, "stereographic": False},
+        frequency: bool = False,
         **kwargs,
     ):
         # cols = df.columns.to_list()
@@ -45,12 +46,11 @@ class TimeSeries(Dataset):
         # static_var = None
         fc_target = windows[:, -n_out:, window_target]
 
-
         self.his_data = torch.from_numpy(hist_var).float()
         self.future_features = torch.from_numpy(future_var).float()
         self.fc_data = torch.from_numpy(fc_target).float()
+        self.freq = frequency
 
-            
         print("observed data shape:\t", hist_var.shape)
         print("future features shape:\t", future_var.shape)
         print("forecast target shape:\t", fc_target.shape)
@@ -60,11 +60,11 @@ class TimeSeries(Dataset):
 
     def __getitem__(self, index):
         batch_data = {
-            "observed_data": self.his_data[index],
-            "future_data": self.fc_data[index],
+            "condition": {"observed_data": self.his_data[index]},
+            "future_data": dft(self.fc_data[index], real_imag=True)
+            if self.freq
+            else self.fc_data[index],
         }
         if self.future_features.numel():
-            batch_data["future_features"] = self.future_features[index]
+            batch_data["condition"]["future_features"] = self.future_features[index]
         return batch_data
-
-

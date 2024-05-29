@@ -8,8 +8,17 @@ from torch.utils.tensorboard import SummaryWriter
 # from src.models.diffusion import DDPM
 from tqdm import tqdm
 
+from src.models.base import BaseModel
 from src.models.diffusion import BaseDiffusion
 import numpy as np
+
+
+def tensor_dict_to(batch_dict: dict, device: str):
+    for k in batch_dict:
+        if isinstance(batch_dict[k], dict):
+            tensor_dict_to(batch_dict[k], device)
+        else:
+            batch_dict[k] = batch_dict[k].to(device)
 
 
 def setup_seed(fix_seed=9):
@@ -67,24 +76,25 @@ class EarlyStopping:
 class Trainer:
     def __init__(
         self,
-        diffusion: BaseDiffusion,
+        # model: BaseModel,
         epochs: int,
         lr: float = 1e-3,
         alpha: float = 0,
         early_stop: int = -1,
-        val_step:int=1,
+        val_step: int = 1,
         device: str = "cpu",
         output_pth: str = "/home/user/data/FrequencyDiffusion/savings",
+        smoke_test: bool = False,
         **kwargs,
     ) -> None:
-        self.diffusion = diffusion
+        # model = model
         self.epochs = epochs
         self.alpha = alpha
         self.lr = lr
-        self.optimizer = torch.optim.Adam(params=diffusion.get_params(), lr=lr)
+
         self.device = device
         self.exp_name = kwargs.get("exp_name")
-        self.exp_name +=  datetime.now().strftime("%Y%m%d%H%M%S")
+        self.exp_name += datetime.now().strftime("%Y%m%d%H%M%S")
 
         self.output_pth = output_pth
         self.early_stopper = (
@@ -95,45 +105,50 @@ class Trainer:
             else None
         )
         self.val_step = val_step
+        self.smoke_test = smoke_test
 
-    def train(self, train_dataloader, val_dataloader=None, epochs: int = None):
+    def fit(
+        self,
+        model: BaseModel,
+        train_dataloader,
+        val_dataloader=None,
+    ):
+        model.to(self.device)
+        optimizer = torch.optim.Adam(model.parameters(), self.lr)
         writer = SummaryWriter(f"runs/{self.exp_name}")
-        E = epochs if epochs is not None else self.epochs
-        # torch.save(self.model, self.output_pth)
-        for e in tqdm(range(E), ncols=50):
+        # torch.save(model, self.output_pth)
+        for e in tqdm(range(self.epochs), ncols=100):
             # set train mode
-            self._set_mode("train")
-
+            model.train()
             train_loss = 0
             for batch in train_dataloader:
-                for k in batch:
-                    batch[k] = batch[k].to(self.device)
+                tensor_dict_to(batch, self.device)
 
-                # get target
-                x = batch.pop("future_data")
-                loss = self.diffusion.get_loss(x, condition=batch)
-
+                loss = model.train_step(batch)
                 train_loss += loss
 
-                if self.alpha > 0:
-                    for p in self.diffusion.get_params():
-                        loss += 0.5 * self.alpha * (p * p).sum()
+                # if self.alpha > 0:
+                #     for p in model.get_params():
+                #         loss += 0.5 * self.alpha * (p * p).sum()
 
                 # Backpropagation
-                self.optimizer.zero_grad(set_to_none=True)
+                optimizer.zero_grad(set_to_none=True)
                 loss.backward()
 
-                self.optimizer.step()
+                optimizer.step()
+                if self.smoke_test:
+                    break
 
             train_loss /= len(train_dataloader)
-
             if val_dataloader is not None:
                 if e % self.val_step == 0:
-                    val_loss = self.eval(val_dataloader)
-                    writer.add_scalars("loss", {"train": train_loss, "val": val_loss}, e)
+                    val_loss = self.validate(model, val_dataloader)
+                    writer.add_scalars(
+                        "loss", {"train": train_loss, "val": val_loss}, e
+                    )
 
                     if self.early_stopper is not None:
-                        self.early_stopper(val_loss, self.diffusion)
+                        self.early_stopper(val_loss, model)
                         if self.early_stopper.early_stop:
                             print(f"Early Stop at Epoch {e+1}!\n")
                             break
@@ -141,55 +156,43 @@ class Trainer:
             else:
                 writer.add_scalar("train", train_loss, e)
                 # self.writer.add_scalars('Loss', {"train": train_loss}, e)
-
         writer.close()
+
+        # save best model
         if val_dataloader is not None:
-            self.diffusion = torch.load(os.path.join(self.output_pth, "checkpoint.pt"))
-        torch.save(self.diffusion, os.path.join(self.output_pth, "diffusion.pt"))
+            model = torch.load(os.path.join(self.output_pth, "checkpoint.pt"))
+        torch.save(model, os.path.join(self.output_pth, "diffusion.pt"))
 
-    def eval(self, dataset):
+    def validate(self, model: BaseModel, dataloader):
         test_loss = 0
-        self._set_mode("val")
-        for batch in dataset:
-            for k in batch:
-                batch[k] = batch[k].to(self.device)
-            with torch.no_grad():
-                # get target
-                x = batch.pop("future_data")
-                loss = self.diffusion.get_loss(x, condition=batch)
-                test_loss += loss
-        return test_loss / len(dataset)
+        model.eval()
+        for batch in dataloader:
+            tensor_dict_to(batch, self.device)
+            loss = model.validation_step(batch)
+            test_loss += loss
+        return test_loss / len(dataloader)
 
-    def _set_mode(self, mode):
-        if isinstance(self.diffusion, BaseDiffusion):
-            if mode == "train":
-                self.diffusion.backbone.train()
-                if self.diffusion.conditioner is not None:
-                    self.diffusion.conditioner.train()
-            elif mode == "val":
-                self.diffusion.backbone.eval()
-                if self.diffusion.conditioner is not None:
-                    self.diffusion.conditioner.eval()
-            else:
-                raise ValueError("no such mode!")
-        else:
-            if mode == "train":
-                self.diffusion.train()
-            elif mode == "val":
-                self.diffusion.eval()
-            else:
-                raise ValueError("no such mode!")
+    def predict(self, model: BaseModel, dataloader):
+        model.eval()
+        all_pred = []
+        for batch in dataloader:
+            tensor_dict_to(batch, self.device)
+            pred = model.predict_step(batch)
+            all_pred.append(pred)
+            if self.smoke_test:
+                break
+        return all_pred
 
 
 def get_expname_(config, bb_name, cn_name=None, df_name=None):
     name = bb_name + "_"
     diff_config = config["diff_config"]
-    if diff_config["freq_kw"]["frequency"]:
+    if df_name.__contains__('Freq') or df_name.__contains__('freq'): 
         name += "freq_"
     else:
         name += "time_"
 
-    name += f"norm_{diff_config['norm']}_diff_{diff_config['fit_on_diff']}_"
+    name += f"norm_{diff_config['norm']}_diff_{diff_config['pred_diff']}_"
 
     if (
         diff_config["noise_kw"]["min_beta"] == diff_config["noise_kw"]["max_beta"]

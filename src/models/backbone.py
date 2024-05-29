@@ -1,3 +1,4 @@
+import sys
 import torch
 from typing import List, Union, Tuple
 from torch import nn
@@ -13,6 +14,13 @@ from .blocks import (
     Upsample,
     ResidualBlock,
 )
+
+thismodule = sys.modules[__name__]
+# TODO: build backbone function
+def build_backbone(bb_config):
+    bb_config_c = bb_config.copy()
+    bb_net = getattr(thismodule, bb_config_c.pop("name"))
+    return bb_net(**bb_config_c)
 
 
 class MLPBackbone(nn.Module):

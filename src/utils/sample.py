@@ -28,7 +28,7 @@ class Sampler:
             noise = self.diffusion.init_noise(target, batch, self.n_sample)
             samples = []
             for i in range(self.n_sample):
-                s = self.diffusion.backward(noise[i], batch, collect_all)
+                s = self.diffusion.sample(noise[i], batch, collect_all)
                 samples.append(s)
             samples = torch.stack(samples)
             print(samples.shape)

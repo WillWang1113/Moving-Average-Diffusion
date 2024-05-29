@@ -1,23 +1,23 @@
+import sys
 import torch
 from torch import nn
 from torchvision.ops import MLP
-import abc
+
+thismodule = sys.modules[__name__]
 
 
-class BaseConditioner(nn.Module, abc.ABC):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-
-    def forward(
-        self,
-        observed_data: torch.Tensor,
-        observed_tp: torch.Tensor = None,
-        future_features: torch.Tensor = None,
-    ):
-        raise NotImplementedError()
+# TODO: build backbone function
+def build_conditioner(cn_config):
+    cn_config_c = cn_config.copy()
+    cn_net = getattr(thismodule, cn_config_c.pop("name"), None)
+    if cn_net is not None:
+        return cn_net(**cn_config_c)
+    else:
+        return None
 
 
-class MLPConditioner(BaseConditioner):
+
+class MLPConditioner(nn.Module):
     def __init__(
         self,
         seq_channels,

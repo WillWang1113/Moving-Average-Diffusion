@@ -1,7 +1,6 @@
 import torch
 from torch import nn
-
-from src.utils.fourier import complex_freq_to_real_imag, real_imag_to_complex_freq
+from .fourier import complex_freq_to_real_imag, real_imag_to_complex_freq
 
 
 def get_factors(n):
@@ -15,27 +14,6 @@ def get_factors(n):
     )
     f.sort()
     return f
-
-
-# From Autoformer
-# class MovingAvg(nn.Module):
-#     """
-#     Moving average block to highlight the trend of time series
-#     """
-
-#     def __init__(self, kernel_size, stride=1):
-#         super(MovingAvg, self).__init__()
-#         self.kernel_size = kernel_size
-#         self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride, padding=0)
-
-#     def forward(self, x):
-#         # padding on the both ends of time series
-#         front = x[:, 0:1, :].repeat(1, self.kernel_size // 2, 1)
-#         end = x[:, -1:, :].repeat(1, self.kernel_size - 1 - self.kernel_size // 2, 1)
-#         x = torch.cat([front, x, end], dim=1)
-#         x = self.avg(x.permute(0, 2, 1))
-#         x = x.permute(0, 2, 1)
-#         return x
 
 
 # downsampling through moving average
@@ -94,5 +72,9 @@ class MovingAvgFreq(torch.nn.Module):
         Returns:
             torch.Tensor: complex tensor
         """
-        x_filtered = x * self.Hw.to(x.device)
+        if torch.is_complex(x):
+            x_filtered = x * self.Hw.to(x.device)
+        else:
+            x_filtered = real_imag_to_complex_freq(x) * self.Hw.to(x.device)
+            x_filtered = complex_freq_to_real_imag(x_filtered)
         return x_filtered
