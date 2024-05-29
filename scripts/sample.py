@@ -19,8 +19,8 @@ setup_seed()
 print(device)
 
 
-# root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
-root_path = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/mfred"
+root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
+# root_path = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/mfred"
 # dataset = "benchmarks"
 dataset = "MovingAvgDiffusion"
 deterministic = True
@@ -157,7 +157,7 @@ if __name__ == "__main__":
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
     # ckpt = torch.load("lightning_logs/version_0/checkpoints/epoch=4-step=2800.ckpt")
     diff = MovingAvgDiffusion.load_from_checkpoint(
-        "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/mfred/MovingAvgDiffusion/MLPBackbone_freq_norm_True_diff_True_hot_/lightning_logs/version_4/checkpoints/epoch=9-step=5600.ckpt"
+        "/home/user/data/FrequencyDiffusion/savings/mfred/MovingAvgDiffusion/MLPBackbone_freq_norm_True_diff_True_hot_/lightning_logs/version_0/checkpoints/epoch=2-step=1680.ckpt"
     )
     # diff = MovingAvgDiffusion.load_from_checkpoint("lightning_logs/version_3/checkpoints/epoch=2-step=1680.ckpt")
     cn = diff.backbone

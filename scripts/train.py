@@ -12,8 +12,8 @@ from src.datamodule import dataset
 from src.models import diffusion
 from src.utils.train import get_expname_
 
-root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
-# root_pth = "/home/user/data/FrequencyDiffusion/savings"
+# root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
+root_pth = "/home/user/data/FrequencyDiffusion/savings"
 fix_seed = 9
 random.seed(fix_seed)
 torch.manual_seed(fix_seed)
@@ -29,7 +29,7 @@ def main(config, run_args):
     data_fn = getattr(dataset, run_args["dataset"])
     train_dl, val_dl, test_dl, scaler = data_fn()
     if run_args["test"]:
-        config["train_config"]["epochs"] = 10
+        config["train_config"]["epochs"] = 3
 
     bb_, cn_, df_ = (
         config["bb_config"].get("name"),
@@ -98,13 +98,13 @@ def main(config, run_args):
         max_epochs=config["train_config"]["epochs"],
         check_val_every_n_epoch=1,
         callbacks=[
-            EarlyStopping(
-                monitor="val_loss",
-                min_delta=0.00,
-                patience=3,
-                verbose=False,
-                mode="min",
-            )
+            # EarlyStopping(
+            #     monitor="val_loss",
+            #     min_delta=0.00,
+            #     patience=3,
+            #     verbose=False,
+            #     mode="min",
+            # )
             # checkpoint_callback,
         ],
         default_root_dir=save_folder,
