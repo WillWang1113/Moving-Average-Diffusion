@@ -18,8 +18,8 @@ setup_seed()
 print(device)
 
 
-# root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
-root_path = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/mfred"
+root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
+# root_path = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/mfred"
 # dataset = "benchmarks"
 dataset = "MovingAvgDiffusion"
 deterministic = True
@@ -55,13 +55,13 @@ def main():
         scaler = np.load(f, allow_pickle="TRUE").item()
 
     df_out = []
-    exp_dirs = glob.glob(exp_path+"/*Backbone*")
+    exp_dirs = glob.glob(exp_path+"/*Backbone*t")
     # exp_dirs = glob.glob("*Backbone*", root_dir=exp_path)
     # exp_dirs.sort()
     exp_dirs = [e[:-2] for e in exp_dirs]
     exp_dirs = list(set(exp_dirs))
     exp_dirs.sort()
-    # print(exp_dirs)
+    print(exp_dirs)
 
     for d in exp_dirs:
         # for d in exp_dirs:
@@ -99,11 +99,11 @@ def main():
             diff.config_sample(sigmas, sample_steps)
             print(diff.sigmas)
 
-            # PLOT WEIGHTS
-            cn = diff.backbone
-            for name, p in cn.named_parameters():
-                print(name, p[0])
-                break
+            # # PLOT WEIGHTS
+            # cn = diff.backbone
+            # for name, p in cn.named_parameters():
+            #     print(name, p[0])
+            #     break
             
             # if name.__contains__('weight'):
             #     fig, ax = plt.subplots()

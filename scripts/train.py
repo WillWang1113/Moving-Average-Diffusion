@@ -29,7 +29,7 @@ def main(config, run_args, n):
     data_fn = getattr(dataset, run_args["dataset"])
     train_dl, val_dl, test_dl, scaler = data_fn()
     if run_args["test"]:
-        config["train_config"]["epochs"] = 10
+        config["train_config"]["epochs"] = 5
 
     bb_, cn_, df_ = (
         config["bb_config"].pop("name"),
