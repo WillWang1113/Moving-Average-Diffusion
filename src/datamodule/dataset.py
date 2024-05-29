@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader
 
 from src.datamodule.dataclass import TimeSeries
 
-root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/dataset"
-# root_pth = "/home/user/data/FrequencyDiffusion/dataset"
+# root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/dataset"
+root_pth = "/home/user/data/FrequencyDiffusion/dataset"
 
 
 # toy dataset

@@ -166,3 +166,4 @@ runs/
 tests/
 ./*.csv
 notebooks/test.ipynb
+datasets/

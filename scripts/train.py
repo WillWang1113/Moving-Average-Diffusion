@@ -12,8 +12,8 @@ from src.utils.train import Trainer, get_expname_
 import json
 
 
-root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
-# root_pth = "/home/user/data/FrequencyDiffusion/savings"
+# root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
+root_pth = "/home/user/data/FrequencyDiffusion/savings"
 fix_seed = 9
 random.seed(fix_seed)
 torch.manual_seed(fix_seed)
