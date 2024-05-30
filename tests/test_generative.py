@@ -59,20 +59,20 @@ def main(config, run_args, n):
     torch.save(test_dl, os.path.join(root_pth, run_args["dataset"], "test_dl.pt"))
     batch = next(iter(train_dl))
     seq_length, seq_channels = (
-        batch["condition"]["observed_data"].shape[1],
-        batch["condition"]["observed_data"].shape[2],
+        batch["observed_data"].shape[1],
+        batch["observed_data"].shape[2],
     )
     target_seq_length, target_seq_channels = (
         batch["future_data"].shape[1],
         batch["future_data"].shape[2],
     )
     future_seq_length, future_seq_channels = (
-        batch["condition"]["future_features"].shape[1],
-        batch["condition"]["future_features"].shape[2],
+        batch["future_features"].shape[1],
+        batch["future_features"].shape[2],
     )
 
-    print("\n")
-    print("MODEL PARAM:")
+    
+
     config["bb_config"]["seq_channels"] = target_seq_channels
     config["bb_config"]["seq_length"] = target_seq_length
     config["bb_config"]["latent_dim"] = config["cn_config"]["latent_dim"]
@@ -87,7 +87,10 @@ def main(config, run_args, n):
         conditioner_config=config["cn_config"],
         **config["diff_config"],
     )
-
+    # print("\n")
+    # print("MODEL PARAM:")
+    # print(sum([p.numel() for p in diff.parameters()]))
+    # return 0
     trainer = Trainer(
         smoke_test=run_args["test"],
         device=device,
@@ -99,7 +102,8 @@ def main(config, run_args, n):
     trainer.fit(diff, train_dl, val_dl)
     diff.config_sampling()
     preds = trainer.predict(diff, test_dl)
-    print(preds[0][0][[0]].shape)
+    print(preds[0][0][0].shape)
+    # plt.plot(preds[0][0][0].flatten())
     plt.plot(idft(preds[0][0][[0]], real_imag=True).flatten())
     plt.savefig('test_new.png')
 

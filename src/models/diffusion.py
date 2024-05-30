@@ -1,4 +1,5 @@
 from typing import Dict
+from matplotlib import pyplot as plt
 import torch
 from torch import nn
 
@@ -171,25 +172,26 @@ class MADTime(BaseDiffusion):
         return x_noisy
 
     def train_step(self, batch):
-        x = batch["future_data"]
-        condition = batch["condition"]
-        loss = self._get_loss(x, condition)
+        x = batch.pop("future_data")
+        # condition = batch["condition"]
+        loss = self._get_loss(x, batch)
         return loss
 
     @torch.no_grad
     def validation_step(self, batch):
-        x = batch["future_data"]
-        condition = batch["condition"]
-        loss = self._get_loss(x, condition)
+        x = batch.pop("future_data")
+        # condition = batch["condition"]
+        loss = self._get_loss(x, batch)
         return loss
 
     @torch.no_grad
     def predict_step(self, batch):
         assert self._sample_ready
-        condition = batch["condition"]
-        x = self._init_noise(batch["future_data"], condition)
+        x_real = batch.pop("future_data")
+        # condition = batch["condition"]
+        x = self._init_noise(x_real, batch)
 
-        c = self._encode_condition(condition)
+        c = self._encode_condition(batch)
         if c.shape[0] != x.shape[0]:
             c = c.repeat(x.shape[0] // c.shape[0], 1)
 
@@ -197,6 +199,7 @@ class MADTime(BaseDiffusion):
         for i in range(len(self.sample_Ts)):
             # i is the index of denoise step, t is the denoise step
             t = self.sample_Ts[i]
+            prev_t = None if t == 0 else self.sample_Ts[i + 1]
             t_tensor = torch.tensor(t, device=x.device).repeat(x.shape[0])
 
             # ! norm here?
@@ -209,13 +212,15 @@ class MADTime(BaseDiffusion):
 
             x_hat_norm, _ = self._normalize(x_hat) if self.norm else (x_hat, None)
 
-            prev_t = None if t == 0 else self.sample_Ts[i + 1]
             x = self.reverse(x, x_hat_norm, t, prev_t)
 
             if self.norm:
                 _, (mu, std) = self._normalize(x_hat, t=prev_t)
             else:
                 mu, std = 0.0, 1.0
+            # plt.plot(x[0])
+            # plt.savefig(f'runs/{t}.png')
+            # plt.close()
 
             if self.collect_all:
                 all_x.append(x * std + mu)
@@ -224,8 +229,9 @@ class MADTime(BaseDiffusion):
             all_x[0] = all_x[0] + mu
             out_x = torch.stack(all_x, dim=-1)
         else:
-            out_x = x + mu
+            out_x = x * std + mu
         out_x = out_x.reshape(self.n_sample, *batch["future_data"].shape).detach().cpu()
+
         return out_x
 
     def _get_loss(self, x, condition: dict = None):
@@ -235,7 +241,6 @@ class MADTime(BaseDiffusion):
 
         # x^\prime if norm
         x_norm, _ = self._normalize(x) if self.norm else (x, None)
-
         # corrupt data
         x_noisy = self.degrade(x_norm, t)
 
@@ -244,6 +249,15 @@ class MADTime(BaseDiffusion):
         x_hat = self.backbone(x_noisy, t, c)
         if self.pred_diff:
             x_hat = x_hat + x_noisy
+            
+        # fig,ax = plt.subplots()
+        # ax.plot(x[0].cpu(), label='target')
+        # ax.plot(x_hat[0].detach().cpu(), label='pred')
+        # ax.plot(x_noisy[0].detach().cpu(), label='input')
+        # # ax.plot(x_hat[0].detach().cpu())
+        # ax.legend()
+        # fig.savefig(f'runs/{t[0].cpu()}.png')
+        # plt.close()
 
         # fit on original scale
         loss = nn.functional.mse_loss(x_hat, x)
@@ -253,13 +267,13 @@ class MADTime(BaseDiffusion):
         self,
         x: torch.Tensor,
         condition: Dict[str, torch.Tensor] = None,
-        n_sample: int = 1,
     ):
         # * INIT ON TIME DOMAIN AND DO TRANSFORM
         # TODO: condition on basic predicion f(x)
         if (condition is not None) and (self.conditioner is not None):
             # ! just for test !
             # ! use latest observed as zero frequency component !
+            print("conditional generating")
             time_value = condition["observed_data"][:, [-1], :]
             prev_value = torch.zeros_like(time_value) if self.norm else time_value
             prev_value = prev_value.expand(-1, x.shape[1], -1)
@@ -267,7 +281,7 @@ class MADTime(BaseDiffusion):
             noise = (
                 prev_value
                 + torch.randn(
-                    n_sample,
+                    self.n_sample,
                     *prev_value.shape,
                     device=prev_value.device,
                     dtype=prev_value.dtype,
@@ -304,12 +318,13 @@ class MADTime(BaseDiffusion):
         self.sample_Ts = (
             list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
         )
+
         self.sigmas = torch.zeros_like(self.betas) if sigmas is None else sigmas
 
         for i in range(len(self.sample_Ts) - 1):
             t = self.sample_Ts[i]
             prev_t = self.sample_Ts[i + 1]
-
+            assert t > prev_t
             assert self.betas[prev_t] >= self.sigmas[t]
         self._sample_ready = True
 
@@ -355,7 +370,7 @@ class MADFreq(MADTime):
         self.degrade_fn = [MovingAvgFreq(f, freq=freq) for f in self.factors]
         freq_response = torch.concat([df.Hw for df in self.degrade_fn])
         self.register_buffer("freq_response", freq_response)
-        self.betas = self.betas * 1 / 2**0.5
+        # self.betas = self.betas * 1 / 2**0.5
 
     @torch.no_grad
     def degrade(self, x: torch.Tensor, t: torch.Tensor):
@@ -384,6 +399,18 @@ class MADFreq(MADTime):
         stdev = torch.sqrt(var + 1e-6)
         x_norm = (x_ - mean) / stdev
         return x_norm, (mean, stdev)
+
+    def train_step(self, batch):
+        batch["future_data"] = dft(batch["future_data"], real_imag=True)
+        return super().train_step(batch)
+
+    def validation_step(self, batch):
+        batch["future_data"] = dft(batch["future_data"], real_imag=True)
+        return super().validation_step(batch)
+
+    def predict_step(self, batch):
+        batch["future_data"] = dft(batch["future_data"], real_imag=True)
+        return super().predict_step(batch)
 
 
 # class MovingAvgDiffusion(BaseDiffusion):

@@ -73,8 +73,10 @@ class MovingAvgFreq(torch.nn.Module):
             torch.Tensor: complex tensor
         """
         if torch.is_complex(x):
+            # print('directly multi')
             x_filtered = x * self.Hw.to(x.device)
         else:
+            # print('first2complex')
             x_filtered = real_imag_to_complex_freq(x) * self.Hw.to(x.device)
             x_filtered = complex_freq_to_real_imag(x_filtered)
         return x_filtered

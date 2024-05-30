@@ -2,6 +2,7 @@ import os
 import random
 from datetime import datetime
 
+from matplotlib import pyplot as plt
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
@@ -9,7 +10,6 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.models.base import BaseModel
-from src.models.diffusion import BaseDiffusion
 import numpy as np
 
 
@@ -122,20 +122,24 @@ class Trainer:
             model.train()
             train_loss = 0
             for batch in train_dataloader:
-                tensor_dict_to(batch, self.device)
+                for k in batch:
+                    batch[k] = batch[k].to(self.device)
 
                 loss = model.train_step(batch)
-                train_loss += loss
 
                 # if self.alpha > 0:
                 #     for p in model.get_params():
                 #         loss += 0.5 * self.alpha * (p * p).sum()
+                train_loss += loss
 
                 # Backpropagation
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
 
                 optimizer.step()
+                # for p in model.parameters():
+                #     print(p[0][0])
+                #     break
                 if self.smoke_test:
                     break
 
@@ -181,6 +185,7 @@ class Trainer:
             all_pred.append(pred)
             if self.smoke_test:
                 break
+
         return all_pred
 
 
