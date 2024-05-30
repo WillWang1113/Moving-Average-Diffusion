@@ -9,13 +9,13 @@ cn_config:
   latent_dim: 128
 
 diff_config:
-  name: MADFreq
+  name: MADTime
   noise_kw: 
     name: linear
     min_beta: 1.0e-4
     max_beta: 2.0e-2
-  norm: on
-  pred_diff: on
+  norm: off
+  pred_diff: off
 
 train_config:
   epochs: 150

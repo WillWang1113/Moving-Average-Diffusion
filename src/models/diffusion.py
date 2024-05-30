@@ -1,19 +1,20 @@
 from typing import Dict
-from matplotlib import pyplot as plt
+
 import torch
+from matplotlib import pyplot as plt
 from torch import nn
 
 from ..models.backbone import build_backbone
 from ..models.base import BaseDiffusion
 from ..models.conditioner import build_conditioner
 from ..utils import schedule
+from ..utils.filters import MovingAvgFreq, MovingAvgTime, get_factors
 from ..utils.fourier import (
     complex_freq_to_real_imag,
     dft,
     idft,
     real_imag_to_complex_freq,
 )
-from ..utils.filters import get_factors, MovingAvgTime, MovingAvgFreq
 
 
 class DDPM(BaseDiffusion):
@@ -36,10 +37,6 @@ class DDPM(BaseDiffusion):
         self.register_buffer("alphas", alphas)
         self.register_buffer("betas", betas)
         self.register_buffer("alpha_bars", alpha_bars)
-
-        # self.alphas = alphas
-        # self.betas = betas
-        # self.alpha_bars = alpha_bars
         self.T = T
         self.freq = frequency
 
@@ -173,14 +170,12 @@ class MADTime(BaseDiffusion):
 
     def train_step(self, batch):
         x = batch.pop("future_data")
-        # condition = batch["condition"]
         loss = self._get_loss(x, batch)
         return loss
 
     @torch.no_grad
     def validation_step(self, batch):
         x = batch.pop("future_data")
-        # condition = batch["condition"]
         loss = self._get_loss(x, batch)
         return loss
 
@@ -218,9 +213,6 @@ class MADTime(BaseDiffusion):
                 _, (mu, std) = self._normalize(x_hat, t=prev_t)
             else:
                 mu, std = 0.0, 1.0
-            # plt.plot(x[0])
-            # plt.savefig(f'runs/{t}.png')
-            # plt.close()
 
             if self.collect_all:
                 all_x.append(x * std + mu)
@@ -228,9 +220,10 @@ class MADTime(BaseDiffusion):
         if self.collect_all:
             all_x[0] = all_x[0] + mu
             out_x = torch.stack(all_x, dim=-1)
+            out_x = out_x.reshape(self.n_sample, *x_real.shape, -1).detach()
         else:
             out_x = x * std + mu
-        out_x = out_x.reshape(self.n_sample, *batch["future_data"].shape).detach().cpu()
+            out_x = out_x.reshape(self.n_sample, *x_real.shape).detach()
 
         return out_x
 
@@ -241,6 +234,7 @@ class MADTime(BaseDiffusion):
 
         # x^\prime if norm
         x_norm, _ = self._normalize(x) if self.norm else (x, None)
+
         # corrupt data
         x_noisy = self.degrade(x_norm, t)
 
@@ -249,15 +243,6 @@ class MADTime(BaseDiffusion):
         x_hat = self.backbone(x_noisy, t, c)
         if self.pred_diff:
             x_hat = x_hat + x_noisy
-            
-        # fig,ax = plt.subplots()
-        # ax.plot(x[0].cpu(), label='target')
-        # ax.plot(x_hat[0].detach().cpu(), label='pred')
-        # ax.plot(x_noisy[0].detach().cpu(), label='input')
-        # # ax.plot(x_hat[0].detach().cpu())
-        # ax.legend()
-        # fig.savefig(f'runs/{t[0].cpu()}.png')
-        # plt.close()
 
         # fit on original scale
         loss = nn.functional.mse_loss(x_hat, x)
@@ -273,7 +258,6 @@ class MADTime(BaseDiffusion):
         if (condition is not None) and (self.conditioner is not None):
             # ! just for test !
             # ! use latest observed as zero frequency component !
-            print("conditional generating")
             time_value = condition["observed_data"][:, [-1], :]
             prev_value = torch.zeros_like(time_value) if self.norm else time_value
             prev_value = prev_value.expand(-1, x.shape[1], -1)
@@ -318,7 +302,6 @@ class MADTime(BaseDiffusion):
         self.sample_Ts = (
             list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
         )
-
         self.sigmas = torch.zeros_like(self.betas) if sigmas is None else sigmas
 
         for i in range(len(self.sample_Ts) - 1):
@@ -338,15 +321,11 @@ class MADTime(BaseDiffusion):
     def reverse(self, x, x_hat, t, prev_t):
         if t == 0:
             x = x_hat + torch.randn_like(x_hat) * self.sigmas[t]
-            # prev_t = None
         else:
             # calculate coeffs
-            # prev_t = self.sample_Ts[i + 1]
             coeff = self.betas[prev_t] ** 2 - self.sigmas[t] ** 2
             coeff = torch.sqrt(coeff) / self.betas[t]
             sigma = self.sigmas[t]
-            # coeff = 0
-            # sigma = self.betas[prev_t]
             x = (
                 x * coeff
                 + self.degrade_fn[prev_t](x_hat)
@@ -370,14 +349,13 @@ class MADFreq(MADTime):
         self.degrade_fn = [MovingAvgFreq(f, freq=freq) for f in self.factors]
         freq_response = torch.concat([df.Hw for df in self.degrade_fn])
         self.register_buffer("freq_response", freq_response)
-        # self.betas = self.betas * 1 / 2**0.5
+        # self.betas = self.betas
 
     @torch.no_grad
     def degrade(self, x: torch.Tensor, t: torch.Tensor):
         x_complex = real_imag_to_complex_freq(x)
         # x_complex = dft(x, real_imag=False)
         # # real+imag --> complex tensor
-        # x_complex = real_imag_to_complex_freq(x) if self.freq_kw["real_imag"] else x
 
         # matrix multiplication
         x_filtered = x_complex * self.freq_response[t]
@@ -395,22 +373,34 @@ class MADFreq(MADTime):
         x_ = self.degrade_fn[t](x) if t is not None else x
         mean = torch.zeros_like(x_)
         mean[:, [0], :] = x_[:, [0], :]
-        var = torch.sum(torch.abs(x_[1:]) ** 2) * 2 / x.shape[1]
+        var = (
+            torch.sum(torch.abs(x_[:, 1:, :]) ** 2, dim=1, keepdim=True)
+            * 2
+            / x.shape[1]
+        )
         stdev = torch.sqrt(var + 1e-6)
         x_norm = (x_ - mean) / stdev
         return x_norm, (mean, stdev)
 
     def train_step(self, batch):
-        batch["future_data"] = dft(batch["future_data"], real_imag=True)
+        batch["future_data"] = dft(batch["future_data"])
         return super().train_step(batch)
 
     def validation_step(self, batch):
-        batch["future_data"] = dft(batch["future_data"], real_imag=True)
+        batch["future_data"] = dft(batch["future_data"])
         return super().validation_step(batch)
 
     def predict_step(self, batch):
-        batch["future_data"] = dft(batch["future_data"], real_imag=True)
-        return super().predict_step(batch)
+        batch["future_data"] = dft(batch["future_data"])
+        pred = super().predict_step(batch)
+        final_shape = pred.shape
+        pred_idft = idft(pred.flatten(end_dim=1).flatten(2)).reshape(final_shape)
+        return pred_idft
+
+    def _init_noise(self, x: torch.Tensor, condition: Dict[str, torch.Tensor] = None):
+        noise = super()._init_noise(x, condition)
+        out_noise = dft(noise)
+        return out_noise
 
 
 # class MovingAvgDiffusion(BaseDiffusion):

@@ -123,19 +123,19 @@ def plot_fcst(y_pred, y_real, save_name, kernel_size: list = None):
     fig.savefig(save_name)
 
 
-def temporal_avg(y_pred, y_real, kernel_size, kind):
+def temporal_avg(y_pred: torch.Tensor, y_real: torch.Tensor, kernel_size, kind):
     all_res_pred, all_res_real = [], []
     for i in range(y_pred.shape[-1]):
         res_y_pred = y_pred[..., i]
         ks = kernel_size[i]
         avgpool = AvgPool1d(ks, ks)
-        res_y_real = torch.from_numpy(y_real)
-        res_y_real = avgpool(res_y_real.permute(0, 2, 1)).permute(0, 2, 1)
-        res_y_real = res_y_real.numpy()
+        # res_y_real = torch.from_numpy(y_real)
+        res_y_real = avgpool(y_real.permute(0, 2, 1)).permute(0, 2, 1)
+        # res_y_real = res_y_real.numpy()
         assert kind in ["freq", "time"]
         if kind == "time":
             # res_y_pred: [n_sample, bs, ts, dim]
-            res_y_pred = torch.from_numpy(res_y_pred).flatten(end_dim=1)
+            res_y_pred = res_y_pred.flatten(end_dim=1)
             # res_y_pred: [n_sample * bs, ts, dim]
             res_y_pred = functional.interpolate(
                 res_y_pred.permute(0, 2, 1),
@@ -143,10 +143,10 @@ def temporal_avg(y_pred, y_real, kernel_size, kind):
             )
             res_y_pred = res_y_pred[..., :: kernel_size[i]].permute(0, 2, 1)
             assert res_y_pred.shape[1:] == res_y_real.shape[1:]
-            res_y_pred = res_y_pred.reshape((-1, *res_y_real.shape)).numpy()
+            res_y_pred = res_y_pred.reshape((-1, *res_y_real.shape))
         else:
             res_y_pred = res_y_pred[:, :, ks - 1 :: ks, :]
             assert res_y_pred.shape[2] == res_y_real.shape[1]
-        all_res_pred.append(res_y_pred)
-        all_res_real.append(res_y_real)
+        all_res_pred.append(res_y_pred.numpy())
+        all_res_real.append(res_y_real.numpy())
     return all_res_pred, all_res_real

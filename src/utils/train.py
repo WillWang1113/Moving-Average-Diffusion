@@ -77,7 +77,7 @@ class Trainer:
     def __init__(
         self,
         # model: BaseModel,
-        epochs: int,
+        epochs: int = 10,
         lr: float = 1e-3,
         alpha: float = 0,
         early_stop: int = -1,
@@ -85,7 +85,7 @@ class Trainer:
         device: str = "cpu",
         output_pth: str = "/home/user/data/FrequencyDiffusion/savings",
         smoke_test: bool = False,
-        **kwargs,
+        exp_name = 'model'
     ) -> None:
         # model = model
         self.epochs = epochs
@@ -93,7 +93,7 @@ class Trainer:
         self.lr = lr
 
         self.device = device
-        self.exp_name = kwargs.get("exp_name")
+        self.exp_name = exp_name
         self.exp_name += datetime.now().strftime("%Y%m%d%H%M%S")
 
         self.output_pth = output_pth
@@ -171,22 +171,25 @@ class Trainer:
         test_loss = 0
         model.eval()
         for batch in dataloader:
-            tensor_dict_to(batch, self.device)
+            for k in batch:
+                batch[k] = batch[k].to(self.device)
             loss = model.validation_step(batch)
             test_loss += loss
         return test_loss / len(dataloader)
 
     def predict(self, model: BaseModel, dataloader):
+        model.to(self.device)
         model.eval()
-        all_pred = []
+        all_pred, all_label = [], []
         for batch in dataloader:
-            tensor_dict_to(batch, self.device)
+            for k in batch:
+                batch[k] = batch[k].to(self.device)
+            all_label.append(batch['future_data'])
             pred = model.predict_step(batch)
             all_pred.append(pred)
             if self.smoke_test:
                 break
-
-        return all_pred
+        return all_pred, all_label
 
 
 def get_expname_(config, bb_name, cn_name=None, df_name=None):

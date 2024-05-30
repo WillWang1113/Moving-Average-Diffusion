@@ -1,14 +1,12 @@
-import random
 import pandas as pd
 import torch
 import numpy as np
 import os
 import glob
 from src.utils.filters import get_factors
-from src.utils.train import setup_seed
-from src.utils.sample import Sampler, plot_fcst, temporal_avg
+from src.utils.train import Trainer, setup_seed
+from src.utils.sample import plot_fcst, temporal_avg
 from src.utils.metrics import calculate_metrics
-import matplotlib.pyplot as plt
 
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
 # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -21,7 +19,8 @@ print(device)
 root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
 # root_path = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/mfred"
 # dataset = "benchmarks"
-dataset = "MovingAvgDiffusion"
+dataset = "MADFreq"
+kind = 'freq'
 deterministic = True
 fast_sample = True
 smoke_test = True
@@ -54,24 +53,33 @@ def main():
     with open(os.path.join(root_path, "scaler.npy"), "rb") as f:
         scaler = np.load(f, allow_pickle="TRUE").item()
 
+
+    mean, std = scaler["data"]
+    target = scaler["target"]
+
+            
+            
     df_out = []
-    exp_dirs = glob.glob(exp_path+"/*Backbone*t")
+    exp_dirs = glob.glob(exp_path+"/test*Backbone*")
     # exp_dirs = glob.glob("*Backbone*", root_dir=exp_path)
     # exp_dirs.sort()
     exp_dirs = [e[:-2] for e in exp_dirs]
     exp_dirs = list(set(exp_dirs))
     exp_dirs.sort()
     print(exp_dirs)
+    trainer = Trainer(smoke_test=smoke_test, device=device)
 
     for d in exp_dirs:
         # for d in exp_dirs:
         avg_m = []
         for i in range(num_training):
-            i = 't'
+            # i = 't'
             read_d = os.path.join(exp_path, d + f"_{i}", "diffusion.pt")
             print(read_d)
-            kind = d.split("_")[1]
+            # print(kind)
             diff = torch.load(read_d)
+            
+            
 
             # DDIM on 50 steps
             # diff.fast_sample=True
@@ -96,8 +104,13 @@ def main():
                     # sigmas = None
                     sigmas = torch.linspace(1e-3, 0.7, diff.T, device=diff.device)
                     # sigmas[0] = sigmas[1]
-            diff.config_sample(sigmas, sample_steps)
-            print(diff.sigmas)
+            diff.config_sampling(n_sample, sigmas, sample_steps, collect_all)
+            y_pred, y_real = trainer.predict(diff, test_dl)
+            y_pred = torch.concat(y_pred, dim=1).detach().cpu()
+            y_real = torch.concat(y_real, dim=0).detach().cpu()
+
+            y_pred = y_pred * std[target] + mean[target]
+            y_real = y_real * std[target] + mean[target]
 
             # # PLOT WEIGHTS
             # cn = diff.backbone
@@ -113,13 +126,7 @@ def main():
             #     fig.tight_layout()
             #     fig.savefig('assets/'+name+'.png')
 
-            sampler = Sampler(diff, n_sample, scaler)
-
-            # y_pred, y_real = sampler.predict(test_dl)
-            y_pred, y_real = sampler.sample(
-                test_dl, smoke_test=smoke_test, collect_all=collect_all
-            )
-            # print(y_pred.shape)
+            
             if collect_all:
                 y_pred, y_real = temporal_avg(y_pred, y_real, kernel_size, kind)
 

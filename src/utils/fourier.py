@@ -2,7 +2,7 @@ import torch
 import math
 from torch.fft import rfft, irfft
 
-def dft(x: torch.Tensor, **kwargs) -> torch.Tensor:
+def dft(x: torch.Tensor, real_imag=True) -> torch.Tensor:
     """Compute the DFT of the input time series by keeping only the non-redundant components.
 
     Args:
@@ -12,11 +12,11 @@ def dft(x: torch.Tensor, **kwargs) -> torch.Tensor:
         torch.Tensor: DFT of x with the same size (batch_size, max_len, n_channels).
     """
 
-    max_len = x.size(1)
+    # max_len = x.size(1)
 
     # Compute the FFT until the Nyquist frequency
     dft_full = rfft(x, dim=1, norm="ortho")
-    if kwargs.get("real_imag"):
+    if real_imag:
         # Concatenate real and imaginary parts
         x_tilde = complex_freq_to_real_imag(dft_full)
         # assert (
@@ -27,7 +27,7 @@ def dft(x: torch.Tensor, **kwargs) -> torch.Tensor:
     return x_tilde.detach()
 
 
-def idft(x: torch.Tensor, **kwargs) -> torch.Tensor:
+def idft(x: torch.Tensor, real_imag=True) -> torch.Tensor:
     """Compute the inverse DFT of the input DFT that only contains non-redundant components.
 
     Args:
@@ -37,7 +37,7 @@ def idft(x: torch.Tensor, **kwargs) -> torch.Tensor:
         torch.Tensor: Inverse DFT of x with the same size (batch_size, max_len, n_channels).
     """
     max_len = x.size(1)
-    if kwargs.get("real_imag"):
+    if real_imag:
         x_freq = real_imag_to_complex_freq(x)
     else:
         x_freq = x
