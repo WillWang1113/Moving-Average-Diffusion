@@ -1,6 +1,7 @@
 import os
 import random
 from datetime import datetime
+import time
 
 from matplotlib import pyplot as plt
 import torch
@@ -182,13 +183,16 @@ class Trainer:
         model.eval()
         all_pred, all_label = [], []
         for batch in dataloader:
+            start = time.time()
             for k in batch:
                 batch[k] = batch[k].to(self.device)
-            all_label.append(batch['future_data'])
+            all_label.append(batch['future_data'].cpu())
+            # with torch.autocast(device_type="cuda"):
             pred = model.predict_step(batch)
-            all_pred.append(pred)
+            all_pred.append(pred.cpu())
             if self.smoke_test:
                 break
+            print(time.time()-start)
         return all_pred, all_label
 
 

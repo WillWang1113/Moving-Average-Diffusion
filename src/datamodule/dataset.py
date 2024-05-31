@@ -118,7 +118,7 @@ def mfred():
     )
     test_dl = DataLoader(
         test_ds,
-        batch_size=data_config["batch_size"] * 2,
+        batch_size=data_config["batch_size"],
         shuffle=False,
         pin_memory=True,
     )

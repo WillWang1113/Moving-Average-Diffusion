@@ -35,6 +35,7 @@ def main(args, n):
     exp_name = (
         f"{get_expname_(config, bb_, cn_, df_)}{'t' if args['smoke_test'] else n}"
     )
+
     # exp_name = f"{bb_}_{CONFIG['diff_config']}_{'t' if args.test else n}"
     save_folder = os.path.join(
         root_pth,

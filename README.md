@@ -1,9 +1,10 @@
-# MovingAvg Diffusion
-The repo for MovingAvg diffusion.
+# MAD: Moving Average Diffusion
+The repo for Moving Average Diffusion
 
 <!-- Authors: Chenxi Wang -->
 
 ## Backgrounds
+
 ### DDPM
 DDPM-related models rely on the forward process:
 $$\mathbf{x}_t = \alpha_t \mathbf{x}_0 + \beta_t \epsilon, \epsilon  \sim \mathcal{N}(0, \mathbf{I})$$
@@ -18,8 +19,8 @@ $$\mathbf{x}_t = D(\mathbf{x}_0, t) + \beta_t \epsilon, \epsilon  \sim \mathcal{
 where $D(\cdot, t)$ is the degradation function, such as blurring, noising, and so on. In Cold Diffusion(NIPS2023), $\beta_t = 0$, while in Soft Diffusion(TMLR), $D(\mathbf{x}_0, t)= \mathbf{C}_t \mathbf{x}_0$.
 
 
-## MovingAvg Diffusion
-In time series forecasting, progressive (or coarse-to-fine) models can generally improve the accuracy. Such philosophy is highly aligned with Diffusion models. Meanwhile, noise-based diffusion model makes the intermediate products of diffusion model unusable, which are abandoned after sampling.  
+## Moving Average Diffusion
+In time series forecasting, progressive (or coarse-to-fine) models can generally improve the accuracy. Such philosophy is highly aligned with the one of Diffusion models. However, noise-based diffusion model makes the intermediate products of diffusion model unusable, which are abandoned after sampling.  
 
 Therefore, we try to explore the research problem: **Can we progressively produce usable forecasts through diffusion?**
 <!-- In the field of time series forecasting, forecasts at different temporal resolution should follow the hierachical rule. It says that the temporally aggreagated high-resolution forecasts should be align with the low-resolution forecasts.  -->
@@ -31,6 +32,7 @@ In the most case of multi-resolution forecasting, low-resolution data/forecasts 
 
 In terms of time domain, moving average can be expressed as convolution with the kernel $\mathbf{K}_t$:
 $$\mathbf{x}_t = \mathbf{K}_t * \mathbf{x}_0 + \beta_t \epsilon, \epsilon  \sim \mathcal{N}(0, \mathbf{I})$$
+$\mathbf{x}_0$ is a windowed time series data in the original resolution.
 
 
 In terms of frequency domain, moving average can be expressed as multiplication with the frequency response $\mathbf{\tilde{K}}_t$:
@@ -65,6 +67,17 @@ $$\begin{cases}
 
 ## Experiments
 
+<!-- ### DDPM
+
+| Method       | RMSE     | MAE      | CRPS     |
+| ------------ | -------- | -------- | -------- |
+| cnn_freq_2M  | 0.050387 | 0.041882 | 0.038450 |
+| cnn_time_2M  | 0.040539 | 0.033057 | 0.031043 |
+| mlp_freq_23M | 0.056778 | 0.047382 | 0.042925 |
+| mlp_time_23M | 0.078413 | 0.065104 | 0.059050 | -->
+
+
+### Benchmark
 ### DDPM
 
 | Method       | RMSE     | MAE      | CRPS     |
@@ -82,7 +95,14 @@ $$\begin{cases}
 
 ### MovingAvg Diffusion
 
-Linear schedule, deterministic sampling, fast_sample
+<!-- Linear schedule, deterministic sampling, fast_sample -->
+Test test
+NHITS from AAAI     0.038xxxx
+Transformers      > 0.04xxxx
+
+training not so 
+sampling
+
 
 | method                     | RMSE     | MAE      | CRPS     |
 | -------------------------- | -------- | -------- | -------- |
@@ -96,6 +116,8 @@ Linear schedule, deterministic sampling, fast_sample
 | cnn_time_norm_on_diff_off  | 0.035221 | 0.026047 | 0.030936 |
 
 
+| method                     | RMSE     | MAE      | CRPS     |
+| -------------------------- | -------- | -------- | -------- |
 | mlp_freq_norm_off_diff_on  | 0.085846 | 0.065210 | 0.067466 |
 | mlp_freq_norm_off_diff_off | 0.084568 | 0.062234 | 0.064756 |
 | mlp_time_norm_off_diff_on  | 0.089474 | 0.065595 | 0.067332 |
@@ -106,7 +128,7 @@ Linear schedule, deterministic sampling, fast_sample
 | cnn_time_norm_off_diff_off | 0.081367 | 0.057613 | 0.060580 |
 
 
-Constant schedule($\beta_t$=0, cold), deterministic sampling, fast_sample
+<!-- Constant schedule($\beta_t$=0, cold), deterministic sampling, fast_sample
 | method                                     | RMSE     | MAE      | CRPS     |
 | ------------------------------------------ | -------- | -------- | -------- |
 | MLPBackbone_freq_norm_True_diff_False_cold | 0.056430 | 0.042523 | 0.049077 |
@@ -124,13 +146,13 @@ Stochastic sampling ($\sigma_t > 0$, Linear schedule, [0.01, 0.1])
 
 <!-- 1. small noise level: max = 1e-1 -->
 
-| Method   | RMSE     | MAE      | CRPS     |
+<!-- | Method   | RMSE     | MAE      | CRPS     |
 | -------- | -------- | -------- | -------- |
 | cnn_freq | 0.034253 | 0.025336 | 0.030797 |
 | cnn_time | 0.060331 | 0.043948 | 0.046540 |
 | mlp_freq | 0.069998 | 0.051043 | 0.053416 |
 | mlp_time | 0.057428 | 0.041764 | 0.043979 |
-| DLinear  | 0.089804 | 0.073082 | -        |
+| DLinear  | 0.089804 | 0.073082 | -        | --> -->
 
 
 
