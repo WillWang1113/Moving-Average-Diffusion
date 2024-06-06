@@ -22,6 +22,16 @@ def crps(y_pred, y_real, sample_weight=None):
     return np.average(per_obs_crps, weights=sample_weight)
 
 
+def mpbl(y_pred, y_real, quantiles=[0.025 * (1 + i) for i in range(39)]):
+    y_pred_q = np.quantile(y_pred, quantiles, axis=0)
+    quantiles = np.array(quantiles).reshape(-1, *[1 for _ in range(y_pred_q.ndim - 1)])
+    error = y_real - y_pred_q  # * n*9
+    first_term = quantiles * error
+    second_term = (quantiles - 1) * error
+    loss = np.maximum(first_term, second_term)
+    return loss.mean()
+
+
 def mae(y_pred, y_real, normalize=False):
     y_pred_point = np.median(y_pred, axis=0)
     scale = np.mean(np.abs(y_real)) if normalize else 1
@@ -41,31 +51,36 @@ def rmse(y_pred, y_real, normalize=False):
 
 
 def calculate_metrics(
-    y_pred, y_real, normalize=False, kind="freq", kernel_size: list = []
+    y_pred,
+    y_real,
+    normalize=False,
 ):
     if isinstance(y_pred, np.ndarray) and isinstance(y_real, np.ndarray):
         print("Evaluate on highest resolution")
         RMSE = rmse(y_pred, y_real, normalize)
         MAE = mae(y_pred, y_real, normalize)
         CRPS = crps(y_pred, y_real)
-        return (RMSE, MAE, CRPS)
+        MPBL = mpbl(y_pred, y_real)
+        return (RMSE, MAE, CRPS, MPBL)
     elif isinstance(y_pred, list) and isinstance(y_real, list):
         print("Evaluate on multi resolutions")
         all_res_metric = []
         for i in range(len(y_pred)):
             res_y_pred, res_y_real = y_pred[i], y_real[i]
-        
+
             # fig, ax = plt.subplots()
             # ax.plot(res_y_real[0].flatten())
-            # ax.plot(res_y_pred[:,0].squeeze().T, 'k', alpha=0.33)
+            # ax.plot(np.median(res_y_pred, axis=0)[0].flatten())
+            # # ax.plot(res_y_pred[:,0].squeeze().T, 'k', alpha=0.33)
             # fig.savefig(f'assets/test_{i}.png')
             # plt.close()
 
             RMSE = rmse(res_y_pred, res_y_real, normalize)
             MAE = mae(res_y_pred, res_y_real, normalize)
             CRPS = crps(res_y_pred, res_y_real)
+            MPBL = mpbl(res_y_pred, res_y_real)
             # print(RMSE)
-            all_res_metric.append((RMSE, MAE, CRPS))
+            all_res_metric.append((RMSE, MAE, CRPS, MPBL))
         return all_res_metric
     else:
         raise ValueError("wrong y_pred shape")

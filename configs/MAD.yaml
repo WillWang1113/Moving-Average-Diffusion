@@ -10,10 +10,7 @@ cn_config:
 
 diff_config:
   name: MADTime
-  noise_kw: 
-    name: linear
-    min_beta: 1.0e-4
-    max_beta: 2.0e-2
+  noise_schedule: empirical
   norm: off
   pred_diff: off
 

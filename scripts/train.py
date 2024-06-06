@@ -33,7 +33,7 @@ def main(args, n):
 
     df = getattr(diffusion, df_)
     exp_name = (
-        f"{get_expname_(config, bb_, cn_, df_)}{'t' if args['smoke_test'] else n}"
+        f"{get_expname_(config, bb_, cn_, df_)}_{'t' if args['smoke_test'] else n}"
     )
 
     # exp_name = f"{bb_}_{CONFIG['diff_config']}_{'t' if args.test else n}"
@@ -71,10 +71,14 @@ def main(args, n):
     config["cn_config"]["seq_length"] = seq_length
     config["cn_config"]["future_seq_channels"] = future_seq_channels
     config["cn_config"]["future_seq_length"] = future_seq_length
+    noise_schedule = torch.load(
+        os.path.join(root_pth, config["diff_config"].pop("noise_schedule") + ".pt")
+    )
 
     diff = df(
         backbone_config=config["bb_config"],
         conditioner_config=config["cn_config"],
+        noise_schedule=noise_schedule,
         **config["diff_config"],
     )
 
@@ -102,9 +106,7 @@ if __name__ == "__main__":
     parser.add_argument("--diff_config.name", type=str)
     parser.add_argument("--diff_config.norm", action="store_true", default=None)
     parser.add_argument("--diff_config.pred_diff", action="store_true", default=None)
-    parser.add_argument("--diff_config.noise_kw.name", type=str)
-    parser.add_argument("--diff_config.noise_kw.min_beta", type=float)
-    parser.add_argument("--diff_config.noise_kw.max_beta", type=float)
+    parser.add_argument("--diff_config.noise_schedule", type=str)
     parser.add_argument("--bb_config.name", type=str)
     parser.add_argument("--bb_config.hidden_size", type=int)
     args = parser.parse_args()

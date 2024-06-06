@@ -1,7 +1,23 @@
 import torch
 import tqdm
-
+import os
 from src.utils.filters import MovingAvgTime
+
+
+def get_schedule(args):
+    if args['name'] == 'linear' or args['name'] == 'cosine':
+        assert args.get('n_steps', False)
+        if args['name'] == 'linear':
+            assert args.get('min_beta', False) and args.get('max_beta', False)
+            return linear_schedule(**args)
+        else:
+            return cosine_schedule(**args)
+
+    elif args['name'] == 'std':
+        args['train_dl'] == args.get('train_dl', None)
+        args['check_pth'] == args.get('check_pth', None)
+        return std_schedule(**args)
+
 
 
 def linear_schedule(min_beta, max_beta, n_steps):
@@ -11,7 +27,7 @@ def linear_schedule(min_beta, max_beta, n_steps):
     return alphas, betas, alpha_bars, torch.sqrt(1 - alpha_bars)
 
 
-def cosine_schedule(min_beta, max_beta, n_steps):
+def cosine_schedule(n_steps):
     """
     cosine schedule as proposed in https://arxiv.org/abs/2102.09672
     """
@@ -37,24 +53,33 @@ def cosine_schedule(min_beta, max_beta, n_steps):
     )  # Clip betas to be within specified range
 
 
-def variance_schedule(train_dl):
-    batch = next(iter(train_dl))
-    seq_length = batch["observed_data"].shape[1]
+def std_schedule(train_dl, check_pth):
+    file_name = os.path.join(check_pth, "var_schedule.pt")
+    exist = os.path.exists(file_name)
+    if exist:
+        all_ratio = torch.load(file_name)
+        return torch.sqrt(1 - all_ratio**2)
+    else:
+        batch = next(iter(train_dl))
+        seq_length = batch["observed_data"].shape[1]
 
-    all_ratio = []
-    for batch in tqdm.tqdm(train_dl):
-        x = batch["future_data"]
-        orig_std = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5)
-        step_ratios = []
-        for j in range(2, seq_length + 1):
-            mat = MovingAvgTime(j)
-            x_avg = mat(x)
-            std_avg = torch.sqrt(
-                torch.var(x_avg, dim=1, keepdim=True, unbiased=False) + 1e-5
+        all_ratio = []
+        for batch in tqdm.tqdm(train_dl):
+            x = batch["future_data"]
+            orig_std = torch.sqrt(
+                torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5
             )
-            ratio = std_avg / orig_std
-            step_ratios.append(ratio)
-        step_ratios = torch.stack(step_ratios)
-        all_ratio.append(step_ratios)
-    all_ratio = torch.concat(all_ratio, dim=1).mean(dim=1)
-    return all_ratio.squeeze()
+            step_ratios = []
+            for j in range(2, seq_length + 1):
+                mat = MovingAvgTime(j)
+                x_avg = mat(x)
+                std_avg = torch.sqrt(
+                    torch.var(x_avg, dim=1, keepdim=True, unbiased=False) + 1e-5
+                )
+                ratio = std_avg / orig_std
+                step_ratios.append(ratio)
+            step_ratios = torch.stack(step_ratios)
+            all_ratio.append(step_ratios)
+        all_ratio = torch.concat(all_ratio, dim=1).mean(dim=1).squeeze()
+        torch.save(all_ratio, file_name)
+        return torch.sqrt(1 - all_ratio**2)

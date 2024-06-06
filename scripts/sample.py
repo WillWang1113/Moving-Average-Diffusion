@@ -36,7 +36,6 @@ def main(args):
     print(kernel_size)
     # print(exp_path)
 
-
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
 
     # with open(os.path.join(root_path, "y_real.npy"), "rb") as f:
@@ -45,12 +44,9 @@ def main(args):
     with open(os.path.join(root_path, "scaler.npy"), "rb") as f:
         scaler = np.load(f, allow_pickle="TRUE").item()
 
-
     mean, std = scaler["data"]
     target = scaler["target"]
 
-            
-            
     df_out = []
     # exp_dirs = glob.glob(exp_path+"/*Backbone*")
     exp_dirs = glob.glob("*Backbone*", root_dir=exp_path)
@@ -69,7 +65,7 @@ def main(args):
             read_d = os.path.join(exp_path, d + f"_{i}", "diffusion.pt")
             print(read_d)
             # print(kind)
-            
+
             diff = torch.load(read_d)
             # diff = torch.compile(diff)
             # print(sum([p.numel() for p in diff.parameters()]))
@@ -99,12 +95,12 @@ def main(args):
                     # sigmas[0] = sigmas[1]
             diff.config_sampling(args.n_sample, sigmas, sample_steps, args.collect_all)
             y_pred, y_real = trainer.predict(diff, test_dl)
-            print('finish predicting')
+            print("finish predicting")
             assert len(y_real) == len(y_pred)
             # for j in range(len(y_pred)):
             #     y_pred[j] = y_pred[j].detach().cpu()
             #     y_real[j] = y_real[j].detach().cpu()
-                
+
             y_pred = torch.concat(y_pred, dim=1)
             y_real = torch.concat(y_real, dim=0)
 
@@ -116,7 +112,7 @@ def main(args):
             # for name, p in cn.named_parameters():
             #     print(name, p[0])
             #     break
-            
+
             # if name.__contains__('weight'):
             #     fig, ax = plt.subplots()
             #     pos = ax.imshow(p.detach().cpu().numpy(), cmap='RdBu')
@@ -125,43 +121,46 @@ def main(args):
             #     fig.tight_layout()
             #     fig.savefig('assets/'+name+'.png')
 
-            
             if args.collect_all:
                 y_pred, y_real = temporal_avg(y_pred, y_real, kernel_size, args.kind)
 
             m = calculate_metrics(y_pred, y_real)
             avg_m.append(m)
             if i in [0, "t"]:
-                print('plotting')
+                print("plotting")
                 plot_fcst(
                     y_pred,
                     y_real,
                     kernel_size=kernel_size,
                     save_name=f"assets/{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}{d.split('/')[-1]}.png",
                 )
+            if args.smoke_test:
+                break
 
         avg_m = np.array(avg_m)
         df = pd.DataFrame(
             avg_m.mean(axis=0, keepdims=False if args.collect_all else True),
-            columns=["RMSE", "MAE", "CRPS"],
+            columns=["RMSE", "MAE", "CRPS", "MPBL"],
         )
-        df["method"] = d.split('/')[-1]
+        df["method"] = d.split("/")[-1]
         df["granularity"] = kernel_size if args.collect_all else 1
         df_out.append(df)
 
     df_out = pd.concat(df_out)
-    df_out = df_out.reindex(columns=["method", "granularity", "RMSE", "MAE", "CRPS"])
+    df_out = df_out.reindex(
+        columns=["method", "granularity", "RMSE", "MAE", "CRPS", "MPBL"]
+    )
     # print(df_out)
     # df_out.to_csv("test.csv")
     df_out.to_csv(
-        f"{'fast' if args.fast_sample else ''}_{'dtm' if args.deterministic else ''}.csv"
+        f"assets/{args.model_name}_{'fast' if args.fast_sample else ''}_{'dtm' if args.deterministic else ''}.csv"
     )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Hyperparameters config")
     parser.add_argument("--model_name", type=str, required=True)
-    parser.add_argument("--kind", type=str, required=True, choices=['freq', 'time'])
+    parser.add_argument("--kind", type=str, required=True, choices=["freq", "time"])
     parser.add_argument("--num_train", type=int, default=5)
     # Define overrides with dot notation
     parser.add_argument("--deterministic", action="store_true")

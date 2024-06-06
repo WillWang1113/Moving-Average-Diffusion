@@ -183,7 +183,7 @@ class Trainer:
         model.eval()
         all_pred, all_label = [], []
         for batch in dataloader:
-            start = time.time()
+            # start = time.time()
             for k in batch:
                 batch[k] = batch[k].to(self.device)
             all_label.append(batch['future_data'].cpu())
@@ -192,7 +192,7 @@ class Trainer:
             all_pred.append(pred.cpu())
             if self.smoke_test:
                 break
-            print(time.time()-start)
+            # print(time.time()-start)
         return all_pred, all_label
 
 
@@ -204,12 +204,12 @@ def get_expname_(config, bb_name, cn_name=None, df_name=None):
     else:
         name += "time_"
 
-    name += f"norm_{diff_config['norm']}_diff_{diff_config['pred_diff']}_"
+    name += f"norm_{diff_config['norm']}_diff_{diff_config['pred_diff']}_{diff_config['noise_schedule']}"
 
-    if (
-        diff_config["noise_kw"]["min_beta"] == diff_config["noise_kw"]["max_beta"]
-    ) and (diff_config["noise_kw"]["max_beta"] == 0):
-        name += "cold_"
-    else:
-        name += "hot_"
+    # if (
+    #     diff_config["noise_kw"]["min_beta"] == diff_config["noise_kw"]["max_beta"]
+    # ) and (diff_config["noise_kw"]["max_beta"] == 0):
+    #     name += "cold_"
+    # else:
+    #     name += "hot_"
     return name

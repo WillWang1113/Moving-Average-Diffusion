@@ -136,7 +136,8 @@ class MADTime(BaseDiffusion):
         self,
         backbone_config: dict,
         conditioner_config: dict,
-        noise_kw={"name": "linear", "min_beta": 0.0, "max_beta": 0.0},
+        noise_schedule: torch.Tensor,
+        # noise_kw={"name": "linear", "min_beta": 0.0, "max_beta": 0.0},
         norm=True,
         pred_diff=False,
     ) -> None:
@@ -151,9 +152,10 @@ class MADTime(BaseDiffusion):
         self.factors = [i for i in range(2, self.seq_length + 1)]
         self.T = len(self.factors)
         self.degrade_fn = [MovingAvgTime(f) for f in self.factors]
-        ns = noise_kw.pop("name")
-        noise_schedule = getattr(schedule, ns + "_schedule")(n_steps=self.T, **noise_kw)
-        self.register_buffer("betas", noise_schedule[-1])
+        assert len(noise_schedule) == self.T
+        # ns = noise_kw.pop("name")
+        # noise_schedule = getattr(schedule, ns + "_schedule")(n_steps=self.T, **noise_kw)
+        self.register_buffer("betas", noise_schedule)
 
     @torch.no_grad
     def degrade(self, x: torch.Tensor, t: torch.Tensor):
@@ -340,11 +342,13 @@ class MADFreq(MADTime):
         self,
         backbone_config: Dict,
         conditioner_config: Dict,
-        noise_kw={"name": "linear", "min_beta": 0, "max_beta": 0},
+        noise_schedule: torch.Tensor,
         norm=True,
         pred_diff=False,
     ) -> None:
-        super().__init__(backbone_config, conditioner_config, noise_kw, norm, pred_diff)
+        super().__init__(
+            backbone_config, conditioner_config, noise_schedule, norm, pred_diff
+        )
         freq = torch.fft.rfftfreq(self.seq_length)
         self.degrade_fn = [MovingAvgFreq(f, freq=freq) for f in self.factors]
         freq_response = torch.concat([df.Hw for df in self.degrade_fn])
