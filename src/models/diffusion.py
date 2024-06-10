@@ -239,7 +239,11 @@ class MADTime(BaseDiffusion):
 
         # corrupt data
         x_noisy = self.degrade(x_norm, t)
-
+        # fig, ax = plt.subplots()
+        # ax.plot(x_noisy[0].flatten().cpu())
+        # fig.savefig(f'assets/{t[0].cpu()}.png')
+        # plt.close()
+        
         # eps_theta
         c = self._encode_condition(condition)
         x_hat = self.backbone(x_noisy, t, c)

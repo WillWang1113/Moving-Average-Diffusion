@@ -112,3 +112,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     for i in range(args.num_train):
         main(vars(args), i)
+        if args.smoke_test:
+            break

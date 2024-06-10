@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 import pandas as pd
 import torch
 import numpy as np
@@ -29,6 +30,8 @@ def main(args):
         sample_steps = [factors.index(i) for i in kernel_size]
         sample_steps.reverse()
     else:
+        seq_length = 288
+        kernel_size = [i for i in range(2, seq_length + 1)]
         sample_steps = None
     kernel_size.sort()
     kernel_size.reverse()
@@ -49,7 +52,9 @@ def main(args):
 
     df_out = []
     # exp_dirs = glob.glob(exp_path+"/*Backbone*")
-    exp_dirs = glob.glob("*Backbone*", root_dir=exp_path)
+    exp_dirs = glob.glob(
+        "*Backbone*std_schedule*", root_dir=exp_path
+    )
     # exp_dirs.sort()
     exp_dirs = [e[:-2] for e in exp_dirs]
     exp_dirs = list(set(exp_dirs))
@@ -153,7 +158,7 @@ def main(args):
     # print(df_out)
     # df_out.to_csv("test.csv")
     df_out.to_csv(
-        f"assets/{args.model_name}_{'fast' if args.fast_sample else ''}_{'dtm' if args.deterministic else ''}.csv"
+        f"assets/{args.model_name}_{'fast' if args.fast_sample else ''}_{'dtm' if args.deterministic else ''}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
     )
 
 

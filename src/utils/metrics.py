@@ -33,18 +33,35 @@ def mpbl(y_pred, y_real, quantiles=[0.025 * (1 + i) for i in range(39)]):
 
 
 def mae(y_pred, y_real, normalize=False):
-    y_pred_point = np.median(y_pred, axis=0)
+    if y_pred.ndim <= 3:
+        y_pred_point = y_pred
+    elif y_pred.ndim == 4:
+        y_pred_point = np.median(y_pred, axis=0)
+    else:
+        raise ValueError('wrong y_pred shape, either ndim ==4 or 3 less.')
+    # y_pred_point = np.median(y_pred, axis=0)
     scale = np.mean(np.abs(y_real)) if normalize else 1
     return np.mean(np.abs(y_pred_point - y_real)) / scale
 
 
 def mse(y_pred, y_real):
-    y_pred_point = np.median(y_pred, axis=0)
+    if y_pred.ndim <= 3:
+        y_pred_point = y_pred
+    elif y_pred.ndim == 4:
+        y_pred_point = np.median(y_pred, axis=0)
+    else:
+        raise ValueError('wrong y_pred shape, either ndim ==4 or 3 less.')
+    # y_pred_point = np.median(y_pred, axis=0)  
     return np.mean((y_pred_point - y_real) ** 2)
 
 
 def rmse(y_pred, y_real, normalize=False):
-    y_pred_point = np.median(y_pred, axis=0)
+    if y_pred.ndim <= 3:
+        y_pred_point = y_pred
+    elif y_pred.ndim == 4:
+        y_pred_point = np.median(y_pred, axis=0)
+    else:
+        raise ValueError('wrong y_pred shape, either ndim ==4 or 3 less.')
     MSE = np.mean((y_pred_point - y_real) ** 2)
     scale = np.mean(np.abs(y_real)) if normalize else 1
     return np.sqrt(MSE) / scale
@@ -86,5 +103,14 @@ def calculate_metrics(
         raise ValueError("wrong y_pred shape")
 
 
-def get_bench_metrics():
-    pass
+def get_bench_metrics(y_pred, y_real, quantiles):
+    RMSE = rmse(np.median(y_pred, axis=-1), y_real)
+    MAE = mae(np.median(y_pred, axis=-1), y_real)
+    
+    
+    quantiles = np.array(quantiles).reshape(-1, *[1 for _ in range(y_pred.ndim - 1)])
+    error = y_real - y_pred.transpose(3,0,1,2)  # * n*9
+    first_term = quantiles * error
+    second_term = (quantiles - 1) * error
+    MPBL = np.maximum(first_term, second_term).mean()
+    return (RMSE, MAE, MPBL)

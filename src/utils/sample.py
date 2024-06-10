@@ -95,7 +95,7 @@ class Sampler:
 
 def plot_fcst(y_pred, y_real, save_name, kernel_size: list = None):
 
-    fig, ax = plt.subplots(3, 3, figsize=[8,6])
+    fig, ax = plt.subplots(4, 4, figsize=[8*1.33,6*1.33])
     ax = ax.flatten()
     if isinstance(y_pred, np.ndarray):
         n_sample = y_pred.shape[0]
