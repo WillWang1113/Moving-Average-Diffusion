@@ -66,16 +66,16 @@ def main(args):
     }
 
     models = [
-        MLP(**config, loss=MQLoss(quantiles=quantiles)),
-        NHITS(**config, loss=MQLoss(quantiles=quantiles)),
-        NBEATSx(**config, loss=MQLoss(quantiles=quantiles)),
-        TFT(**config, loss=MQLoss(quantiles=quantiles)),
-        Autoformer(**config, loss=MQLoss(quantiles=quantiles)),
-        FEDformer(**config, loss=MQLoss(quantiles=quantiles)),
-        DeepAR(
-            **config,
-            loss=DistributionLoss(distribution="Normal", num_samples=200, level=level),
-        ),
+        MLP(**config, loss=MQLoss(level=level)),
+        NHITS(**config, loss=MQLoss(level=level)),
+        NBEATSx(**config, loss=MQLoss(level=level)),
+        TFT(**config, loss=MQLoss(level=level)),
+        Autoformer(**config, loss=MQLoss(level=level)),
+        FEDformer(**config, loss=MQLoss(level=level)),
+        # DeepAR(
+        #     **config,
+        #     loss=DistributionLoss(distribution="Normal", num_samples=200, level=level),
+        # ),
     ]
     model_names = [m._get_name() for m in models]
     nf = NeuralForecast(models=models, freq="5min")
@@ -93,7 +93,9 @@ def main(args):
 
     out_dict = {}
     for i, m in enumerate(model_names):
+        print(m)
         model_cols = [c for c in cols if m in c]
+        # print(Y_hat_df[model_cols])
 
         y_hat = Y_hat_df[model_cols].values
         y_hat = y_hat.reshape(-1, horizon, n_series, len(quantiles))
@@ -105,10 +107,13 @@ def main(args):
             y_hat, y_true, quantiles=np.array(quantiles)
         )
         out_dict[m] = (RMSE, MAE, PBL)
+        print((RMSE, MAE, PBL))
         # fig, ax = plt.subplots()
         # ax.plot(y_true[127])
         # ax.plot(y_hat[127].squeeze())
         # fig.savefig("test.png")
+
+    return out_dict
 
 
 if __name__ == "__main__":

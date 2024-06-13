@@ -53,7 +53,7 @@ def main(args):
     df_out = []
     # exp_dirs = glob.glob(exp_path+"/*Backbone*")
     exp_dirs = glob.glob(
-        "*Backbone*std_schedule*", root_dir=exp_path
+        "*Backbone*", root_dir=exp_path
     )
     # exp_dirs.sort()
     exp_dirs = [e[:-2] for e in exp_dirs]

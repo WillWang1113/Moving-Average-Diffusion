@@ -139,7 +139,7 @@ def temporal_avg(y_pred: torch.Tensor, y_real: torch.Tensor, kernel_size, kind):
             # res_y_pred: [n_sample * bs, ts, dim]
             res_y_pred = functional.interpolate(
                 res_y_pred.permute(0, 2, 1),
-                size=y_real.shape[1] - kernel_size[i] + 1,
+                size=y_real.shape[1] - kernel_size[i] + 1, mode="nearest-exact"
             )
             res_y_pred = res_y_pred[..., :: kernel_size[i]].permute(0, 2, 1)
             assert res_y_pred.shape[1:] == res_y_real.shape[1:]
