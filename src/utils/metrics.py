@@ -72,6 +72,8 @@ def calculate_metrics(
     y_real,
     normalize=False,
 ):
+    # print(y_pred.shape)
+    # print(y_real.shape)
     if isinstance(y_pred, np.ndarray) and isinstance(y_real, np.ndarray):
         print("Evaluate on highest resolution")
         RMSE = rmse(y_pred, y_real, normalize)

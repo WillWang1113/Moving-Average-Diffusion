@@ -10,8 +10,8 @@ cn_config:
 
 diff_config:
   name: MADTime
-  noise_schedule: empirical
-  norm: off
+  noise_schedule: std
+  norm: on
   pred_diff: off
 
 train_config:

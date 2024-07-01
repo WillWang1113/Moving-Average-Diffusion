@@ -1,30 +1,34 @@
+import sys
 import torch
 import tqdm
 import os
 from src.utils.filters import MovingAvgTime
 
+thismodule = sys.modules[__name__]
 
-def get_schedule(args):
-    if args['name'] == 'linear' or args['name'] == 'cosine':
-        assert args.get('n_steps', False)
-        if args['name'] == 'linear':
-            assert args.get('min_beta', False) and args.get('max_beta', False)
-            return linear_schedule(**args)
-        else:
-            return cosine_schedule(**args)
+def get_schedule(name, n_steps, train_dl=None, check_pth=None):
+    if name != "std":
+        assert name in ['linear', 'cosine', 'zero']
+        fn = getattr(thismodule, name)
+        return fn(n_steps)
 
-    elif args['name'] == 'std':
-        args['train_dl'] == args.get('train_dl', None)
-        args['check_pth'] == args.get('check_pth', None)
-        return std_schedule(**args)
+    else:
+        assert (check_pth is not None) and (train_dl is not None)
+        return std_schedule(train_dl, check_pth)
 
 
-
-def linear_schedule(min_beta, max_beta, n_steps):
-    betas = torch.linspace(min_beta, max_beta, n_steps)
-    alphas = 1 - betas
-    alpha_bars = torch.cumprod(alphas, dim=0)
-    return alphas, betas, alpha_bars, torch.sqrt(1 - alpha_bars)
+def linear_schedule(n_steps, min_beta=1e-4, max_beta=2e-2):
+    betas_bars = torch.linspace(min_beta, max_beta, n_steps)
+    alpha_bars = 1 - betas_bars
+    alphas = torch.cumprod(alpha_bars, dim=0)
+    betas = torch.sqrt(1 - alpha_bars)
+    return {
+        "alpha_bars": alpha_bars,
+        "betas_bars": betas_bars,
+        "alphas": alphas,
+        "betas": betas,
+    }
+    return alpha_bars, betas_bars, alphas, betas
 
 
 def cosine_schedule(n_steps):
@@ -45,6 +49,13 @@ def cosine_schedule(n_steps):
     )  # Calculate betas from alphas
     betas = torch.clip(betas, 0.0001, 0.9999)
     alphas = 1 - betas
+    return {
+        "alpha_bars": alphas,
+        "betas_bars": betas,
+        "alphas": alphas_cumprod[1:],
+        "betas": torch.sqrt(1 - alphas_cumprod[1:]),
+    }
+
     return (
         alphas,
         betas,
@@ -53,15 +64,40 @@ def cosine_schedule(n_steps):
     )  # Clip betas to be within specified range
 
 
+def zero_schedule(n_steps):
+    return {
+        "alpha_bars": None,
+        "betas_bars": None,
+        "alphas": torch.ones(n_steps).float(),
+        "betas": torch.zeros(n_steps).float(),
+    }
+
+    return (
+        torch.ones(n_steps).float(),
+        torch.zeros(n_steps).float(),
+    )  # Clip betas to be within specified range
+
+
 def std_schedule(train_dl, check_pth):
-    file_name = os.path.join(check_pth, "var_schedule.pt")
+    batch = next(iter(train_dl))
+    seq_length = batch["future_data"].shape[1]
+
+    file_name = os.path.join(check_pth, f"stdratio_{seq_length - 1}.pt")
     exist = os.path.exists(file_name)
     if exist:
+        print("Use pre-computed schedule!")
         all_ratio = torch.load(file_name)
+        return {
+            "alpha_bars": None,
+            "betas_bars": None,
+            "alphas": None,
+            "betas": torch.sqrt(1 - all_ratio**2),
+        }
         return torch.sqrt(1 - all_ratio**2)
     else:
+        print("Calculate schedule...")
         batch = next(iter(train_dl))
-        seq_length = batch["observed_data"].shape[1]
+        seq_length = batch["future_data"].shape[1]
 
         all_ratio = []
         for batch in tqdm.tqdm(train_dl):
@@ -82,4 +118,10 @@ def std_schedule(train_dl, check_pth):
             all_ratio.append(step_ratios)
         all_ratio = torch.concat(all_ratio, dim=1).mean(dim=1).squeeze()
         torch.save(all_ratio, file_name)
-        return torch.sqrt(1 - all_ratio**2)
+        return {
+            "alpha_bars": None,
+            "betas_bars": None,
+            "alphas": None,
+            "betas": torch.sqrt(1 - all_ratio**2),
+        }
+        return all_ratio, torch.sqrt(1 - all_ratio**2)

@@ -60,7 +60,7 @@ def syntheic_sine(t_steps=4000, batch_size=128, freq_kw=None):
     return train_dl, test_dl
 
 
-def mfred():
+def mfred(data_config):
     df = pd.read_csv(
         os.path.join(root_pth, "MFRED_clean.csv"), index_col=0, parse_dates=True
     )
@@ -68,7 +68,7 @@ def mfred():
     dummy_ = pd.get_dummies(df[["hour", "weekday"]], prefix_sep=":").astype("float")
     df = pd.concat([df, dummy_], axis=1)
     df = df.drop(columns=["hour", "weekday"])
-    data_config = yaml.safe_load(open("configs/mfred.yaml", "r"))
+    # data_config = yaml.safe_load(open("configs/mfred.yaml", "r"))
     data_config["cols"] = df.columns.tolist()
 
     ct = ColumnTransformer(
@@ -123,6 +123,71 @@ def mfred():
         pin_memory=True,
     )
     return train_dl, val_dl, test_dl, y_scaler
+
+
+# def mfred():
+#     df = pd.read_csv(
+#         os.path.join(root_pth, "MFRED_clean.csv"), index_col=0, parse_dates=True
+#     )
+#     df[["hour", "weekday"]] = df[["hour", "weekday"]].astype("category")
+#     dummy_ = pd.get_dummies(df[["hour", "weekday"]], prefix_sep=":").astype("float")
+#     df = pd.concat([df, dummy_], axis=1)
+#     df = df.drop(columns=["hour", "weekday"])
+#     data_config = yaml.safe_load(open("configs/mfred.yaml", "r"))
+#     data_config["cols"] = df.columns.tolist()
+
+#     ct = ColumnTransformer(
+#         [("numbers", StandardScaler(), ["value", "t2m"])], remainder="passthrough"
+#     )
+
+#     train_df, _ = train_test_split(df, test_size=0.2, shuffle=False)
+#     if data_config["scale"]:
+#         ct = ct.fit(train_df)
+#         df = ct.transform(df)
+#         y_scaler = {
+#             "data": (
+#                 ct.named_transformers_["numbers"].mean_,
+#                 ct.named_transformers_["numbers"].scale_,
+#             ),
+#             "target": data_config["cols"].index(data_config["target"]),
+#         }
+#     else:
+#         y_scaler = None
+
+#     # Slide the total window
+#     window_width = data_config["shift"] + data_config["n_out"] + data_config["n_in"]
+#     windows = np.lib.stride_tricks.sliding_window_view(df, window_width, axis=0)
+#     windows = windows.transpose(0, 2, 1)
+
+#     train_window, test_window = train_test_split(
+#         windows, train_size=len(train_df) - window_width + 1, shuffle=False
+#     )
+
+#     train_window, val_window = train_test_split(
+#         train_window, test_size=1 / 7, shuffle=False
+#     )
+
+#     train_ds = TimeSeries(train_window, **data_config)
+#     val_ds = TimeSeries(val_window, **data_config)
+#     test_ds = TimeSeries(test_window, **data_config)
+#     train_dl = DataLoader(
+#         train_ds,
+#         batch_size=data_config["batch_size"],
+#         shuffle=True,
+#         pin_memory=True,
+#     )
+#     val_dl = DataLoader(
+#         val_ds,
+#         batch_size=data_config["batch_size"],
+#         pin_memory=True,
+#     )
+#     test_dl = DataLoader(
+#         test_ds,
+#         batch_size=data_config["batch_size"],
+#         shuffle=False,
+#         pin_memory=True,
+#     )
+#     return train_dl, val_dl, test_dl, y_scaler
 
 
 # def nrel(setting="nrel"):

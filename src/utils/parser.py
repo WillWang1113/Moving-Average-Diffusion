@@ -1,5 +1,3 @@
-import yaml
-
 # Recursive function to update nested dictionaries
 def update(d, u):
     for k, v in u.items():
@@ -11,14 +9,8 @@ def update(d, u):
     return d
 
 
-def parse_config(config_path):
-    with open(config_path, "r") as file:
-        config = yaml.safe_load(file)
-    return config
-
-
 def override_config(config, args_dict):
-    overrides = {k: v for k, v in args_dict.items() if v is not None}
+    overrides = {k: v for k, v in args_dict.items() if v is not None and (k in list(config.keys()))}
     return update(config, overrides)
 
 
@@ -27,7 +19,6 @@ def new_config(args):
     for k, v in args.items():
         parts = k.split(".")
         temp = result
-
         for part in parts[:-1]:
             if part not in temp or not isinstance(temp[part], dict):
                 temp[part] = {}
@@ -36,12 +27,7 @@ def new_config(args):
     return result
 
 
-def exp_parser(args: dict):
-    with open(args['config'], "r") as file:
-        config = yaml.safe_load(file)
-
-    # args = vars(args)
-    # args.pop("config")
+def exp_parser(config, args: dict):
     args_dict = new_config(args)
     updated_config = override_config(config, args_dict)
     return updated_config

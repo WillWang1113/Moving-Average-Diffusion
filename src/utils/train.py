@@ -196,20 +196,18 @@ class Trainer:
         return all_pred, all_label
 
 
-def get_expname_(config, bb_name, cn_name=None, df_name=None):
+
+def get_expname_(model_config, data_config):
+    bb_name = model_config['bb_config'].get('name')
+    df_name = model_config['diff_config'].get('name')
+    n_out = data_config['n_out']
     name = bb_name + "_"
-    diff_config = config["diff_config"]
+    diff_config = model_config["diff_config"]
     if df_name.__contains__('Freq') or df_name.__contains__('freq'): 
         name += "freq_"
     else:
         name += "time_"
 
-    name += f"norm_{diff_config['norm']}_diff_{diff_config['pred_diff']}_{diff_config['noise_schedule']}"
+    name += f"norm_{diff_config['norm']}_diff_{diff_config['pred_diff']}_{diff_config['noise_schedule']}_fcsth_{n_out}"
 
-    # if (
-    #     diff_config["noise_kw"]["min_beta"] == diff_config["noise_kw"]["max_beta"]
-    # ) and (diff_config["noise_kw"]["max_beta"] == 0):
-    #     name += "cold_"
-    # else:
-    #     name += "hot_"
     return name

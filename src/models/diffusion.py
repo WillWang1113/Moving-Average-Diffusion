@@ -23,20 +23,20 @@ class DDPM(BaseDiffusion):
         backbone_config: dict,
         conditioner_config: dict,
         frequency: bool = False,
-        # freq_kw={"frequency": False},
         T=100,
-        noise_kw={"name": "linear", "min_beta": 0.0, "max_beta": 0.0},
+        noise_schedule="linear",
         **kwargs,
     ) -> None:
         super().__init__()
-        alphas, betas, alpha_bars, _ = getattr(
-            schedule, noise_kw["name"] + "_schedule"
-        )(self.T, **noise_kw)
+        assert noise_schedule in ["linear", "cosine"]
+        noise_kw = getattr(schedule, noise_schedule + "_schedule")(
+            self.T
+        )
         self.backbone = build_backbone(backbone_config)
         self.conditioner = build_conditioner(conditioner_config)
-        self.register_buffer("alphas", alphas)
-        self.register_buffer("betas", betas)
-        self.register_buffer("alpha_bars", alpha_bars)
+        self.register_buffer("alphas", noise_kw['alphas'])
+        self.register_buffer("betas", noise_kw['betas'])
+        self.register_buffer("alpha_bars", noise_kw['alpha_bars'])
         self.T = T
         self.freq = frequency
 
@@ -136,8 +136,7 @@ class MADTime(BaseDiffusion):
         self,
         backbone_config: dict,
         conditioner_config: dict,
-        noise_schedule: torch.Tensor,
-        # noise_kw={"name": "linear", "min_beta": 0.0, "max_beta": 0.0},
+        noise_schedule: dict,
         norm=True,
         pred_diff=False,
     ) -> None:
@@ -152,10 +151,10 @@ class MADTime(BaseDiffusion):
         self.factors = [i for i in range(2, self.seq_length + 1)]
         self.T = len(self.factors)
         self.degrade_fn = [MovingAvgTime(f) for f in self.factors]
-        assert len(noise_schedule) == self.T
         # ns = noise_kw.pop("name")
         # noise_schedule = getattr(schedule, ns + "_schedule")(n_steps=self.T, **noise_kw)
-        self.register_buffer("betas", noise_schedule)
+        self.register_buffer("betas", noise_schedule['betas'])
+        assert len(self.betas) == self.T
 
     @torch.no_grad
     def degrade(self, x: torch.Tensor, t: torch.Tensor):
@@ -207,9 +206,23 @@ class MADTime(BaseDiffusion):
             if self.pred_diff:
                 x_hat = x_hat + x
 
+            # fig, ax = plt.subplots()
+            # ax.plot((x)[::128][:3].squeeze().cpu().T)
+
             x_hat_norm, _ = self._normalize(x_hat) if self.norm else (x_hat, None)
 
-            x = self.reverse(x, x_hat_norm, t, prev_t)
+            x = self.reverse(x=x, x_hat=x_hat_norm, t=t, prev_t=prev_t)
+            # ax.plot((x_hat_norm)[::128][:10].squeeze().cpu().T)
+            # ax.plot((x)[::128][:3].squeeze().cpu().T)
+            # ax.plot((x * coeff)[:3].squeeze().cpu().T)
+            # ax.plot(
+            #     (self.degrade_fn[prev_t](x_hat) - self.degrade_fn[t](x_hat) * coeff)[
+            #         :3
+            #     ].squeeze().cpu().T
+            # )
+            # if i % 5 ==0:
+            # fig.savefig(f'test_{i}.png')
+            # plt.close()
 
             if self.norm:
                 _, (mu, std) = self._normalize(x_hat, t=prev_t)
@@ -243,7 +256,7 @@ class MADTime(BaseDiffusion):
         # ax.plot(x_noisy[0].flatten().cpu())
         # fig.savefig(f'assets/{t[0].cpu()}.png')
         # plt.close()
-        
+
         # eps_theta
         c = self._encode_condition(condition)
         x_hat = self.backbone(x_noisy, t, c)
@@ -309,12 +322,14 @@ class MADTime(BaseDiffusion):
             list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
         )
         self.sigmas = torch.zeros_like(self.betas) if sigmas is None else sigmas
+        self.sigmas = self.sigmas.to(self.betas.device)
 
-        for i in range(len(self.sample_Ts) - 1):
+        for i in range(len(self.sample_Ts)):
             t = self.sample_Ts[i]
-            prev_t = self.sample_Ts[i + 1]
-            assert t > prev_t
-            assert self.betas[prev_t] >= self.sigmas[t]
+            prev_t = None if t == 0 else self.sample_Ts[i + 1]
+            if t != 0:
+                assert t > prev_t
+                assert self.betas[prev_t] >= self.sigmas[t]
         self._sample_ready = True
 
     def _normalize(self, x, t=None):
@@ -332,11 +347,35 @@ class MADTime(BaseDiffusion):
             coeff = self.betas[prev_t] ** 2 - self.sigmas[t] ** 2
             coeff = torch.sqrt(coeff) / self.betas[t]
             sigma = self.sigmas[t]
+            # print(self.betas[prev_t])
+            # fig, ax = plt.subplots()
+            # ax.plot((x)[::128][:1].squeeze().cpu().T, label="input_x")
+            # ax.plot((x_hat)[::128][:1].squeeze().cpu().T, label="x_hat")
             x = (
                 x * coeff
                 + self.degrade_fn[prev_t](x_hat)
                 - self.degrade_fn[t](x_hat) * coeff
             )
+            # sigma = self.betas[prev_t]
+            # print(sigma)
+
+            # x = self.degrade_fn[t](x_hat)
+
+            # ax.plot((x_hat)[::128].squeeze().cpu().T)
+            # ax.plot(
+            #     (self.degrade_fn[prev_t](x_hat) - self.degrade_fn[t](x_hat) * coeff)[
+            #         ::128
+            #     ][:1]
+            #     .squeeze()
+            #     .cpu()
+            #     .T,
+            #     label="delta_x",
+            # )
+            # ax.plot((x)[::128][:1].squeeze().cpu().T, label="output_x")
+            # ax.set_title(f"coeff:{coeff}")
+            # ax.legend()
+            # fig.savefig(f"test_{t}.png")
+
             x = x + torch.randn_like(x) * sigma
         return x
 

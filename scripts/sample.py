@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime
+import random
 import pandas as pd
 import torch
 import numpy as np
@@ -27,6 +28,12 @@ def main(args):
         seq_length = 288
         factors = [i for i in range(2, seq_length + 1)]
         kernel_size = get_factors(seq_length) + [seq_length]
+        
+        # rest_ks = [x for x in factors if x not in kernel_size]
+        # extend_ks = random.sample(rest_ks, 50 - len(kernel_size))
+        # kernel_size.extend(extend_ks)
+        # kernel_size.sort()            
+            
         sample_steps = [factors.index(i) for i in kernel_size]
         sample_steps.reverse()
     else:
@@ -36,7 +43,6 @@ def main(args):
     kernel_size.sort()
     kernel_size.reverse()
     kernel_size += [1]
-    print(kernel_size)
     # print(exp_path)
 
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
@@ -53,7 +59,7 @@ def main(args):
     df_out = []
     # exp_dirs = glob.glob(exp_path+"/*Backbone*")
     exp_dirs = glob.glob(
-        "*Backbone*", root_dir=exp_path
+        "*Backbone*fcst*", root_dir=exp_path
     )
     # exp_dirs.sort()
     exp_dirs = [e[:-2] for e in exp_dirs]
@@ -96,7 +102,8 @@ def main(args):
                     sigmas = torch.zeros_like(diff.betas)
                 else:
                     # sigmas = None
-                    sigmas = torch.linspace(1e-3, 0.7, diff.T, device=diff.device)
+                    sigmas = torch.linspace(0.2, 0.1, len(diff.betas))
+                    # sigmas = torch.linspace(1e-3, 0.7, diff.T, device=diff.device)
                     # sigmas[0] = sigmas[1]
             diff.config_sampling(args.n_sample, sigmas, sample_steps, args.collect_all)
             y_pred, y_real = trainer.predict(diff, test_dl)
@@ -128,6 +135,9 @@ def main(args):
 
             if args.collect_all:
                 y_pred, y_real = temporal_avg(y_pred, y_real, kernel_size, args.kind)
+            else:
+                y_pred = y_pred.cpu().numpy()
+                y_real = y_real.cpu().numpy()
 
             m = calculate_metrics(y_pred, y_real)
             avg_m.append(m)
@@ -155,11 +165,12 @@ def main(args):
     df_out = df_out.reindex(
         columns=["method", "granularity", "RMSE", "MAE", "CRPS", "MPBL"]
     )
-    # print(df_out)
+    print(df_out)
     # df_out.to_csv("test.csv")
-    df_out.to_csv(
-        f"assets/{args.model_name}_{'fast' if args.fast_sample else ''}_{'dtm' if args.deterministic else ''}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-    )
+    if not args.smoke_test:
+        df_out.to_csv(
+            f"assets/{args.model_name}_{'fast' if args.fast_sample else ''}_{'dtm' if args.deterministic else ''}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+        )
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
-data_fn: mfred
 target: value
 n_in: 288
-n_out: 288
+n_out: 144
 shift: 0
 col_in: 
   - value
