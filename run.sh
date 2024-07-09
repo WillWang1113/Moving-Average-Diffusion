@@ -63,34 +63,30 @@
 
 
 
+# python scripts/train.py -mc MAD -dc mfred  --n_out 144
+# python scripts/train.py -mc MAD -dc mfred --diff_config.pred_diff --n_out 144
+
+# python scripts/train.py -mc MAD -dc mfred --diff_config.name MADFreq  --n_out 144
+# python scripts/train.py -mc MAD -dc mfred --diff_config.name MADFreq --diff_config.pred_diff --n_out 144
+
+# python scripts/train.py -mc MAD -dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --n_out 144
+# python scripts/train.py -mc MAD -dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.pred_diff --n_out 144
+
+# python scripts/train.py -mc MAD -dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.name MADFreq --n_out 144
+# python scripts/train.py -mc MAD -dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.name MADFreq --diff_config.pred_diff --n_out 144
 
 
+# python scripts/train.py -mc MAD -dc mfred --n_out 432
+# python scripts/train.py -mc MAD -dc mfred --diff_config.pred_diff --n_out 432
 
+# python scripts/train.py -mc MAD -dc mfred --diff_config.name MADFreq --n_out 432
+# python scripts/train.py -mc MAD -dc mfred --diff_config.name MADFreq --diff_config.pred_diff --n_out 432
 
-python scripts/train.py -mc MAD --dc mfred  --n_out 144
-python scripts/train.py -mc MAD --dc mfred --diff_config.pred_diff --n_out 144
+# python scripts/train.py -mc MAD -dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --n_out 432
+# python scripts/train.py -mc MAD -dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.pred_diff --n_out 432
 
-python scripts/train.py -mc MAD --dc mfred --diff_config.name MADFreq  --n_out 144
-python scripts/train.py -mc MAD --dc mfred --diff_config.name MADFreq --diff_config.pred_diff --n_out 144
-
-python scripts/train.py -mc MAD --dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --n_out 144
-python scripts/train.py -mc MAD --dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.pred_diff --n_out 144
-
-python scripts/train.py -mc MAD --dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.name MADFreq --n_out 144
-python scripts/train.py -mc MAD --dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.name MADFreq --diff_config.pred_diff --n_out 144
-
-
-python scripts/train.py -mc MAD --dc mfred --n_out 432
-python scripts/train.py -mc MAD --dc mfred --diff_config.pred_diff --n_out 432
-
-python scripts/train.py -mc MAD --dc mfred --diff_config.name MADFreq --n_out 432
-python scripts/train.py -mc MAD --dc mfred --diff_config.name MADFreq --diff_config.pred_diff --n_out 432
-
-python scripts/train.py -mc MAD --dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --n_out 432
-python scripts/train.py -mc MAD --dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.pred_diff --n_out 432
-
-python scripts/train.py -mc MAD --dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.name MADFreq --n_out 432
-python scripts/train.py -mc MAD --dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.name MADFreq --diff_config.pred_diff --n_out 432
+# python scripts/train.py -mc MAD -dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.name MADFreq --n_out 432
+# python scripts/train.py -mc MAD -dc mfred --bb_config.name ResNetBackbone --bb_config.hidden_size 128 --diff_config.name MADFreq --diff_config.pred_diff --n_out 432
 
 python scripts/sample.py --model_name MADFreq --deterministic --fast_sample --collect_all --kind freq --n_sample 100
 python scripts/sample.py --model_name MADTime --deterministic --fast_sample --collect_all --kind time --n_sample 100

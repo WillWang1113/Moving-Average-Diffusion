@@ -392,8 +392,7 @@ class MADFreq(MADTime):
         super().__init__(
             backbone_config, conditioner_config, noise_schedule, norm, pred_diff
         )
-        freq = torch.fft.rfftfreq(self.seq_length)
-        self.degrade_fn = [MovingAvgFreq(f, freq=freq) for f in self.factors]
+        self.degrade_fn = [MovingAvgFreq(f, seq_length=self.seq_length) for f in self.factors]
         freq_response = torch.concat([df.Hw for df in self.degrade_fn])
         self.register_buffer("freq_response", freq_response)
         # self.betas = self.betas

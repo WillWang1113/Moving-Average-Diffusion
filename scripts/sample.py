@@ -11,9 +11,8 @@ from src.utils.train import Trainer, setup_seed
 from src.utils.sample import plot_fcst, temporal_avg
 from src.utils.metrics import calculate_metrics
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-setup_seed()
-print(device)
+# device = "cuda" if torch.cuda.is_available() else "cpu"
+# print(device)
 
 
 root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
@@ -22,18 +21,22 @@ root_path = "/home/user/data/FrequencyDiffusion/savings/mfred"
 
 
 def main(args):
+    device = f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu"
+    print("Using: ", device)
+    setup_seed()
+
     exp_path = os.path.join(root_path, args.model_name)
 
     if args.fast_sample:
         seq_length = 288
         factors = [i for i in range(2, seq_length + 1)]
         kernel_size = get_factors(seq_length) + [seq_length]
-        
+
         # rest_ks = [x for x in factors if x not in kernel_size]
         # extend_ks = random.sample(rest_ks, 50 - len(kernel_size))
         # kernel_size.extend(extend_ks)
-        # kernel_size.sort()            
-            
+        # kernel_size.sort()
+
         sample_steps = [factors.index(i) for i in kernel_size]
         sample_steps.reverse()
     else:
@@ -58,9 +61,7 @@ def main(args):
 
     df_out = []
     # exp_dirs = glob.glob(exp_path+"/*Backbone*")
-    exp_dirs = glob.glob(
-        "*Backbone*fcst*", root_dir=exp_path
-    )
+    exp_dirs = glob.glob("*Backbone*fcst*", root_dir=exp_path)
     # exp_dirs.sort()
     exp_dirs = [e[:-2] for e in exp_dirs]
     exp_dirs = list(set(exp_dirs))
@@ -175,6 +176,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Hyperparameters config")
+    parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--model_name", type=str, required=True)
     parser.add_argument("--kind", type=str, required=True, choices=["freq", "time"])
     parser.add_argument("--num_train", type=int, default=5)

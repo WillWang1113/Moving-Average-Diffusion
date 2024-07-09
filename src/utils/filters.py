@@ -50,12 +50,12 @@ class MovingAvgFreq(torch.nn.Module):
     def __init__(
         self,
         kernel_size: int,
-        freq: torch.Tensor,
+        seq_length: int,
         sample_rate: float = 1.0,
         real_imag: bool = True,
     ):
         super().__init__()
-        self.kernel_size = kernel_size
+        freq = torch.fft.rfftfreq(seq_length)
         omega = 2 * torch.pi * freq / sample_rate
         coeff = torch.exp(-1j * omega * (kernel_size - 1) / 2) / kernel_size
         omega = torch.where(omega == 0, 1e-5, omega)
