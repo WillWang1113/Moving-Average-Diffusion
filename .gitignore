@@ -167,3 +167,4 @@ tests/
 ./*.csv
 notebooks/test.ipynb
 datasets/
+lightning_logs/

@@ -40,7 +40,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return criterion
 
     def vali(self, vali_data, vali_loader, criterion):
-        total_loss = []
+        total_loss = 0
         self.model.eval()
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(
@@ -83,13 +83,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 outputs = outputs[:, -self.args.pred_len :, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
 
-                pred = outputs.detach().cpu()
-                true = batch_y.detach().cpu()
+                pred = outputs.detach()
+                true = batch_y.detach()
 
                 loss = criterion(pred, true)
 
-                total_loss.append(loss)
-        total_loss = np.average(total_loss)
+                total_loss+=loss
+        total_loss = total_loss/(i+1)
         self.model.train()
         return total_loss
 
@@ -115,7 +115,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
-            train_loss = []
+            train_loss = 0
 
             self.model.train()
             epoch_time = time.time()
@@ -155,7 +155,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                             self.device
                         )
                         loss = criterion(outputs, batch_y)
-                        train_loss.append(loss.item())
+                        train_loss+=loss
                 else:
                     if self.args.output_attention:
                         outputs = self.model(
@@ -170,25 +170,25 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     outputs = outputs[:, -self.args.pred_len :, f_dim:]
                     batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
                     loss = criterion(outputs, batch_y)
-                    train_loss.append(loss.item())
+                    train_loss+=loss
 
-                if (i + 1) % 100 == 0:
-                    print(
-                        "\titers: {0}, epoch: {1} | loss: {2:.7f}".format(
-                            i + 1, epoch + 1, loss.item()
-                        )
-                    )
-                    speed = (time.time() - time_now) / iter_count
-                    left_time = speed * (
-                        (self.args.train_epochs - epoch) * train_steps - i
-                    )
-                    print(
-                        "\tspeed: {:.4f}s/iter; left time: {:.4f}s".format(
-                            speed, left_time
-                        )
-                    )
-                    iter_count = 0
-                    time_now = time.time()
+                # if (i + 1) % 100 == 0:
+                #     print(
+                #         "\titers: {0}, epoch: {1} | loss: {2:.7f}".format(
+                #             i + 1, epoch + 1, loss.item()
+                #         )
+                #     )
+                #     speed = (time.time() - time_now) / iter_count
+                #     left_time = speed * (
+                #         (self.args.train_epochs - epoch) * train_steps - i
+                #     )
+                #     print(
+                #         "\tspeed: {:.4f}s/iter; left time: {:.4f}s".format(
+                #             speed, left_time
+                #         )
+                #     )
+                #     iter_count = 0
+                #     time_now = time.time()
 
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
@@ -199,7 +199,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     model_optim.step()
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-            train_loss = np.average(train_loss)
+            train_loss = train_loss/iter_count
             vali_loss = self.vali(vali_data, vali_loader, criterion)
             test_loss = self.vali(test_data, test_loader, criterion)
 
@@ -230,9 +230,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         preds = []
         trues = []
-        folder_path = base_root + "/test_results/" + setting + "/"
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
+        # folder_path = base_root + "/test_results/" + setting + "/"
+        # if not os.path.exists(folder_path):
+        #     os.makedirs(folder_path)
 
         self.model.eval()
         with torch.no_grad():
