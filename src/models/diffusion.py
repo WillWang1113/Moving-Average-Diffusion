@@ -249,7 +249,6 @@ class MADTime(BaseDiffusion):
 
         # x^\prime if norm
         x_norm, _ = self._normalize(x) if self.norm else (x, None)
-
         # corrupt data
         x_noisy = self.degrade(x_norm, t)
         # fig, ax = plt.subplots()

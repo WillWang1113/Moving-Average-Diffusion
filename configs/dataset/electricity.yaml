@@ -1,0 +1,10 @@
+data: custom
+root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
+data_path: electricity/electricity.csv
+features: S
+target: OT
+num_workers: 1
+seq_len: 96
+pred_len: 96
+label_len: 0
+batch_size: 128

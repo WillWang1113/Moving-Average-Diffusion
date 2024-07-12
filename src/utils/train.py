@@ -126,7 +126,7 @@ class Trainer:
             for batch in train_dataloader:
                 for k in batch:
                     batch[k] = batch[k].to(self.device)
-
+                    
                 loss = model.train_step(batch)
 
                 # if self.alpha > 0:
@@ -162,6 +162,8 @@ class Trainer:
             else:
                 writer.add_scalar("train", train_loss, e)
                 # self.writer.add_scalars('Loss', {"train": train_loss}, e)
+            if self.smoke_test:
+                    break
         writer.close()
 
         # save best model
@@ -201,7 +203,7 @@ class Trainer:
 def get_expname_(model_config, data_config):
     bb_name = model_config['bb_config'].get('name')
     df_name = model_config['diff_config'].get('name')
-    n_out = data_config['n_out']
+    n_out = data_config['pred_len']
     name = bb_name + "_"
     diff_config = model_config["diff_config"]
     if df_name.__contains__('Freq') or df_name.__contains__('freq'): 

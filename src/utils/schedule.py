@@ -6,15 +6,15 @@ from src.utils.filters import MovingAvgTime
 
 thismodule = sys.modules[__name__]
 
-def get_schedule(name, n_steps, train_dl=None, check_pth=None):
-    if name != "std":
-        assert name in ['linear', 'cosine', 'zero']
-        fn = getattr(thismodule, name)
+def get_schedule(noise_name, data_name, n_steps, train_dl=None, check_pth=None):
+    if noise_name != "std":
+        assert noise_name in ['linear', 'cosine', 'zero']
+        fn = getattr(thismodule, noise_name)
         return fn(n_steps)
 
     else:
         assert (check_pth is not None) and (train_dl is not None)
-        return std_schedule(train_dl, check_pth)
+        return std_schedule(data_name, train_dl, check_pth)
 
 
 def linear_schedule(n_steps, min_beta=1e-4, max_beta=2e-2):
@@ -23,10 +23,10 @@ def linear_schedule(n_steps, min_beta=1e-4, max_beta=2e-2):
     alphas = torch.cumprod(alpha_bars, dim=0)
     betas = torch.sqrt(1 - alpha_bars)
     return {
-        "alpha_bars": alpha_bars,
-        "betas_bars": betas_bars,
-        "alphas": alphas,
-        "betas": betas,
+        "alpha_bars": alpha_bars.float(),
+        "betas_bars": betas_bars.float(),
+        "alphas": alphas.float(),
+        "betas": betas.float(),
     }
     return alpha_bars, betas_bars, alphas, betas
 
@@ -50,10 +50,10 @@ def cosine_schedule(n_steps):
     betas = torch.clip(betas, 0.0001, 0.9999)
     alphas = 1 - betas
     return {
-        "alpha_bars": alphas,
-        "betas_bars": betas,
-        "alphas": alphas_cumprod[1:],
-        "betas": torch.sqrt(1 - alphas_cumprod[1:]),
+        "alpha_bars": alphas.float(),
+        "betas_bars": betas.float(),
+        "alphas": alphas_cumprod[1:].float(),
+        "betas": torch.sqrt(1 - alphas_cumprod[1:]).float(),
     }
 
     return (
@@ -78,11 +78,11 @@ def zero_schedule(n_steps):
     )  # Clip betas to be within specified range
 
 
-def std_schedule(train_dl, check_pth):
+def std_schedule(data_name, train_dl, check_pth):
     batch = next(iter(train_dl))
     seq_length = batch["future_data"].shape[1]
 
-    file_name = os.path.join(check_pth, f"stdratio_{seq_length - 1}.pt")
+    file_name = os.path.join(check_pth, f"stdratio_{data_name}_{seq_length}.pt")
     exist = os.path.exists(file_name)
     if exist:
         print("Use pre-computed schedule!")
@@ -91,7 +91,7 @@ def std_schedule(train_dl, check_pth):
             "alpha_bars": None,
             "betas_bars": None,
             "alphas": None,
-            "betas": torch.sqrt(1 - all_ratio**2),
+            "betas": torch.sqrt(1 - all_ratio**2).float(),
         }
         return torch.sqrt(1 - all_ratio**2)
     else:
@@ -122,6 +122,6 @@ def std_schedule(train_dl, check_pth):
             "alpha_bars": None,
             "betas_bars": None,
             "alphas": None,
-            "betas": torch.sqrt(1 - all_ratio**2),
+            "betas": torch.sqrt(1 - all_ratio**2).float(),
         }
         return all_ratio, torch.sqrt(1 - all_ratio**2)

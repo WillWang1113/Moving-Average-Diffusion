@@ -7,6 +7,7 @@ from sklearn.preprocessing import StandardScaler
 import yaml
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
+from .data_factory import data_provider
 
 from src.datamodule.dataclass import TimeSeries
 
@@ -123,5 +124,3 @@ def mfred(data_config):
         pin_memory=True,
     )
     return train_dl, val_dl, test_dl, y_scaler
-
-
