@@ -29,14 +29,12 @@ class DDPM(BaseDiffusion):
     ) -> None:
         super().__init__()
         assert noise_schedule in ["linear", "cosine"]
-        noise_kw = getattr(schedule, noise_schedule + "_schedule")(
-            self.T
-        )
+        noise_kw = getattr(schedule, noise_schedule + "_schedule")(self.T)
         self.backbone = build_backbone(backbone_config)
         self.conditioner = build_conditioner(conditioner_config)
-        self.register_buffer("alphas", noise_kw['alphas'])
-        self.register_buffer("betas", noise_kw['betas'])
-        self.register_buffer("alpha_bars", noise_kw['alpha_bars'])
+        self.register_buffer("alphas", noise_kw["alphas"])
+        self.register_buffer("betas", noise_kw["betas"])
+        self.register_buffer("alpha_bars", noise_kw["alpha_bars"])
         self.T = T
         self.freq = frequency
 
@@ -143,6 +141,8 @@ class MADTime(BaseDiffusion):
         super().__init__()
         self.backbone = build_backbone(backbone_config)
         self.conditioner = build_conditioner(conditioner_config)
+        if self.conditioner is not None:
+            print("Conditional Diffusion!")
         self.seq_length = self.backbone.seq_length
         self.norm = norm
         self.pred_diff = pred_diff
@@ -153,7 +153,7 @@ class MADTime(BaseDiffusion):
         self.degrade_fn = [MovingAvgTime(f) for f in self.factors]
         # ns = noise_kw.pop("name")
         # noise_schedule = getattr(schedule, ns + "_schedule")(n_steps=self.T, **noise_kw)
-        self.register_buffer("betas", noise_schedule['betas'])
+        self.register_buffer("betas", noise_schedule["betas"])
         assert len(self.betas) == self.T
 
     @torch.no_grad
@@ -189,7 +189,7 @@ class MADTime(BaseDiffusion):
 
         c = self._encode_condition(batch)
         if c.shape[0] != x.shape[0]:
-            c = c.repeat(x.shape[0] // c.shape[0], 1)
+            c = c.repeat(x.shape[0] // c.shape[0], *[1 for _ in range(len(c.shape)-1)])
 
         all_x = [x]
         for i in range(len(self.sample_Ts)):
@@ -206,23 +206,9 @@ class MADTime(BaseDiffusion):
             if self.pred_diff:
                 x_hat = x_hat + x
 
-            # fig, ax = plt.subplots()
-            # ax.plot((x)[::128][:3].squeeze().cpu().T)
-
             x_hat_norm, _ = self._normalize(x_hat) if self.norm else (x_hat, None)
 
             x = self.reverse(x=x, x_hat=x_hat_norm, t=t, prev_t=prev_t)
-            # ax.plot((x_hat_norm)[::128][:10].squeeze().cpu().T)
-            # ax.plot((x)[::128][:3].squeeze().cpu().T)
-            # ax.plot((x * coeff)[:3].squeeze().cpu().T)
-            # ax.plot(
-            #     (self.degrade_fn[prev_t](x_hat) - self.degrade_fn[t](x_hat) * coeff)[
-            #         :3
-            #     ].squeeze().cpu().T
-            # )
-            # if i % 5 ==0:
-            # fig.savefig(f'test_{i}.png')
-            # plt.close()
 
             if self.norm:
                 _, (mu, std) = self._normalize(x_hat, t=prev_t)
@@ -320,9 +306,9 @@ class MADTime(BaseDiffusion):
         self.sample_Ts = (
             list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
         )
-        self.sigmas = torch.zeros_like(self.betas) if sigmas is None else sigmas
-        self.sigmas = self.sigmas.to(self.betas.device)
-
+        sigmas = torch.zeros_like(self.betas) if sigmas is None else sigmas
+        # self.sigmas = self.sigmas.to(self.betas.device)
+        self.register_buffer("sigmas", sigmas)
         for i in range(len(self.sample_Ts)):
             t = self.sample_Ts[i]
             prev_t = None if t == 0 else self.sample_Ts[i + 1]
@@ -391,7 +377,9 @@ class MADFreq(MADTime):
         super().__init__(
             backbone_config, conditioner_config, noise_schedule, norm, pred_diff
         )
-        self.degrade_fn = [MovingAvgFreq(f, seq_length=self.seq_length) for f in self.factors]
+        self.degrade_fn = [
+            MovingAvgFreq(f, seq_length=self.seq_length) for f in self.factors
+        ]
         freq_response = torch.concat([df.Hw for df in self.degrade_fn])
         self.register_buffer("freq_response", freq_response)
         # self.betas = self.betas

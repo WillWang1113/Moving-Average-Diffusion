@@ -71,7 +71,7 @@ class EarlyStopper:
             self.trace_func(
                 f"Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ..."
             )
-        torch.save(model, self.path)
+        torch.save(model.state_dict(), self.path)
         self.val_loss_min = val_loss
 
 
@@ -87,7 +87,7 @@ class Trainer:
         device: str = "cpu",
         output_pth: str = "/home/user/data/FrequencyDiffusion/savings",
         smoke_test: bool = False,
-        exp_name = 'model'
+        exp_name="model",
     ) -> None:
         # model = model
         self.epochs = epochs
@@ -115,7 +115,7 @@ class Trainer:
         train_dataloader,
         val_dataloader=None,
     ):
-        model.to(self.device)
+        model = model.to(self.device)
         optimizer = torch.optim.Adam(model.parameters(), self.lr)
         writer = SummaryWriter(f"runs/{self.exp_name}")
         # torch.save(model, self.output_pth)
@@ -126,7 +126,6 @@ class Trainer:
             for batch in train_dataloader:
                 for k in batch:
                     batch[k] = batch[k].to(self.device)
-                    
                 loss = model.train_step(batch)
 
                 # if self.alpha > 0:
@@ -139,9 +138,6 @@ class Trainer:
                 loss.backward()
 
                 optimizer.step()
-                # for p in model.parameters():
-                #     print(p[0][0])
-                #     break
                 if self.smoke_test:
                     break
 
@@ -163,13 +159,15 @@ class Trainer:
                 writer.add_scalar("train", train_loss, e)
                 # self.writer.add_scalars('Loss', {"train": train_loss}, e)
             if self.smoke_test:
-                    break
+                break
         writer.close()
 
         # save best model
         if val_dataloader is not None:
-            model = torch.load(os.path.join(self.output_pth, "checkpoint.pt"))
-        torch.save(model, os.path.join(self.output_pth, "diffusion.pt"))
+            print("load best model")
+            best_model_path = os.path.join(self.output_pth, "checkpoint.pt")
+            model.load_state_dict(torch.load(best_model_path))
+        return model
 
     def validate(self, model: BaseModel, dataloader):
         test_loss = 0
@@ -189,7 +187,7 @@ class Trainer:
             # start = time.time()
             for k in batch:
                 batch[k] = batch[k].to(self.device)
-            all_label.append(batch['future_data'].cpu())
+            all_label.append(batch["future_data"].cpu())
             # with torch.autocast(device_type="cuda"):
             pred = model.predict_step(batch)
             all_pred.append(pred.cpu())
@@ -199,14 +197,13 @@ class Trainer:
         return all_pred, all_label
 
 
-
 def get_expname_(model_config, data_config):
-    bb_name = model_config['bb_config'].get('name')
-    df_name = model_config['diff_config'].get('name')
-    n_out = data_config['pred_len']
+    bb_name = model_config["bb_config"].get("name")
+    df_name = model_config["diff_config"].get("name")
+    n_out = data_config["pred_len"]
     name = bb_name + "_"
     diff_config = model_config["diff_config"]
-    if df_name.__contains__('Freq') or df_name.__contains__('freq'): 
+    if df_name.__contains__("Freq") or df_name.__contains__("freq"):
         name += "freq_"
     else:
         name += "time_"
@@ -216,23 +213,23 @@ def get_expname_(model_config, data_config):
     return name
 
 
-
 def adjust_learning_rate(optimizer, epoch, args):
     # lr = args.learning_rate * (0.2 ** (epoch // 2))
-    if args.lradj == 'type1':
+    if args.lradj == "type1":
         lr_adjust = {epoch: args.learning_rate * (0.5 ** ((epoch - 1) // 1))}
-    elif args.lradj == 'type2':
-        lr_adjust = {
-            2: 5e-5, 4: 1e-5, 6: 5e-6, 8: 1e-6,
-            10: 5e-7, 15: 1e-7, 20: 5e-8
-        }
+    elif args.lradj == "type2":
+        lr_adjust = {2: 5e-5, 4: 1e-5, 6: 5e-6, 8: 1e-6, 10: 5e-7, 15: 1e-7, 20: 5e-8}
     elif args.lradj == "cosine":
-        lr_adjust = {epoch: args.learning_rate /2 * (1 + math.cos(epoch / args.train_epochs * math.pi))}
+        lr_adjust = {
+            epoch: args.learning_rate
+            / 2
+            * (1 + math.cos(epoch / args.train_epochs * math.pi))
+        }
     if epoch in lr_adjust.keys():
         lr = lr_adjust[epoch]
         for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
-        print('Updating learning rate to {}'.format(lr))
+            param_group["lr"] = lr
+        print("Updating learning rate to {}".format(lr))
 
 
 class EarlyStopping:
@@ -252,7 +249,7 @@ class EarlyStopping:
             self.save_checkpoint(val_loss, model, path)
         elif score < self.best_score + self.delta:
             self.counter += 1
-            print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            print(f"EarlyStopping counter: {self.counter} out of {self.patience}")
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
@@ -262,19 +259,22 @@ class EarlyStopping:
 
     def save_checkpoint(self, val_loss, model, path):
         if self.verbose:
-            print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
-        torch.save(model.state_dict(), path + '/' + 'checkpoint.pth')
+            print(
+                f"Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ..."
+            )
+        torch.save(model.state_dict(), path + "/" + "checkpoint.pth")
         self.val_loss_min = val_loss
 
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
+
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
 
 
-class StandardScaler():
+class StandardScaler:
     def __init__(self, mean, std):
         self.mean = mean
         self.std = std
@@ -286,16 +286,16 @@ class StandardScaler():
         return (data * self.std) + self.mean
 
 
-def visual(true, preds=None, name='./pic/test.pdf'):
+def visual(true, preds=None, name="./pic/test.pdf"):
     """
     Results visualization
     """
     plt.figure()
-    plt.plot(true, label='GroundTruth', linewidth=2)
+    plt.plot(true, label="GroundTruth", linewidth=2)
     if preds is not None:
-        plt.plot(preds, label='Prediction', linewidth=2)
+        plt.plot(preds, label="Prediction", linewidth=2)
     plt.legend()
-    plt.savefig(name, bbox_inches='tight')
+    plt.savefig(name, bbox_inches="tight")
 
 
 def adjustment(gt, pred):

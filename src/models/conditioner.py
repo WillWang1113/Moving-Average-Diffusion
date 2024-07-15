@@ -24,6 +24,8 @@ class MLPConditioner(nn.Module):
         seq_length,
         hidden_size,
         latent_dim,
+        target_seq_length,
+        target_seq_channels,
         future_seq_channels=None,
         future_seq_length=None,
         norm=True,

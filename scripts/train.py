@@ -16,14 +16,14 @@ import json
 
 # root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
 # root_pth = "/home/user/data/FrequencyDiffusion/savings"
-setup_seed()
+
 
 
 def prepare_train(model_config, data_config, args, n):
     root_pth = args["save_dir"]
-    exp_name = (
-        f"{get_expname_(model_config, data_config)}_{'t' if args['smoke_test'] else n}"
-    )
+    # exp_name = (
+    #     f"{get_expname_(model_config, data_config)}_{'t' if args['smoke_test'] else n}"
+    # )
     _, train_dl = data_provider(data_config, "train")
     _, val_dl = data_provider(data_config, "val")
     _, test_dl = data_provider(data_config, "test")
@@ -36,7 +36,8 @@ def prepare_train(model_config, data_config, args, n):
     data_folder = os.path.join(
         root_pth, f"{args['data_config']}_{data_config['pred_len']}_{data_config['features']}"
     )
-    save_folder = os.path.join(data_folder, df_, exp_name)
+    save_folder = os.path.join(data_folder, df_)
+    # save_folder = os.path.join(data_folder, df_, exp_name)
     os.makedirs(save_folder, exist_ok=True)
     with open(os.path.join(save_folder, "config.json"), "w") as w:
         json.dump(model_config, w, indent=2)
@@ -66,6 +67,8 @@ def prepare_train(model_config, data_config, args, n):
     model_config["cn_config"]["seq_length"] = seq_length
     model_config["cn_config"]["future_seq_channels"] = future_seq_channels
     model_config["cn_config"]["future_seq_length"] = future_seq_length
+    model_config["cn_config"]["target_seq_length"] = target_seq_length
+    model_config["cn_config"]["target_seq_channels"] = target_seq_channels
     ns_name = model_config["diff_config"].pop("noise_schedule")
     n_steps = (
         target_seq_length - 1 if df_ != "DDPM" else model_config["diff_config"]["T"]
@@ -73,7 +76,7 @@ def prepare_train(model_config, data_config, args, n):
     noise_schedule = get_schedule(
         ns_name, args["data_config"], n_steps, train_dl, check_pth=data_folder
     )
-    return model_config, noise_schedule, df, exp_name, save_folder, train_dl, val_dl
+    return model_config, noise_schedule, df, save_folder, train_dl, val_dl
 
 
 def main(args, n):
@@ -91,9 +94,11 @@ def main(args, n):
     )
     model_config = exp_parser(model_config, args)
 
-    model_config, noise_schedule, df, exp_name, save_folder, train_dl, val_dl = (
+    model_config, noise_schedule, df, save_folder, train_dl, val_dl = (
         prepare_train(model_config, data_config, args, n)
     )
+    # ! MUST SETUP SEED AFTER prepare_train
+    setup_seed(n)
     diff = df(
         backbone_config=model_config["bb_config"],
         conditioner_config=model_config["cn_config"],
@@ -105,11 +110,14 @@ def main(args, n):
         smoke_test=args["smoke_test"],
         device=device,
         output_pth=save_folder,
-        exp_name=exp_name,
+        exp_name=f"{args['data_config']}_{data_config['pred_len']}_{model_config['diff_config']['norm']}",
         **model_config["train_config"],
     )
 
-    trainer.fit(diff, train_dl, val_dl)
+    diff = trainer.fit(diff, train_dl, val_dl)
+    
+    torch.save(diff, os.path.join(save_folder,f"diffusion_{n}.pt"))
+    
 
 
 if __name__ == "__main__":

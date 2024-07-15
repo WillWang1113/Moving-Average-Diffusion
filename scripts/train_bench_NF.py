@@ -27,7 +27,6 @@ def main(args):
         Y_df = Y_df[Y_df["unique_id"] == "OT"]
 
     n_series = len(Y_df.groupby('unique_id'))
-    print(n_series)
     if args["dataset"].__contains__("ETTh"):
         num_train = 12 * 30 * 24
         num_test = 4 * 30 * 24
