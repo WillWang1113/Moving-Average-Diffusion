@@ -36,7 +36,7 @@ def prepare_train(model_config, data_config, args, n):
     data_folder = os.path.join(
         root_pth, f"{args['data_config']}_{data_config['pred_len']}_{data_config['features']}"
     )
-    save_folder = os.path.join(data_folder, df_)
+    save_folder = os.path.join(data_folder, args["model_config"])
     # save_folder = os.path.join(data_folder, df_, exp_name)
     os.makedirs(save_folder, exist_ok=True)
     with open(os.path.join(save_folder, "config.json"), "w") as w:
@@ -71,7 +71,7 @@ def prepare_train(model_config, data_config, args, n):
     model_config["cn_config"]["target_seq_channels"] = target_seq_channels
     ns_name = model_config["diff_config"].pop("noise_schedule")
     n_steps = (
-        target_seq_length - 1 if df_ != "DDPM" else model_config["diff_config"]["T"]
+        target_seq_length - 1 if df_.__contains__('MAD') else model_config["diff_config"]["T"]
     )
     noise_schedule = get_schedule(
         ns_name, args["data_config"], n_steps, train_dl, check_pth=data_folder

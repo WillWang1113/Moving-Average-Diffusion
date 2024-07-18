@@ -3,6 +3,8 @@ import torch
 from typing import List, Union, Tuple
 from torch import nn
 from torchvision.ops import MLP
+
+from src.utils.filters import MovingAvgFreq
 from .embedding import SinusoidalPosEmb
 from .blocks import (
     CMLP,
@@ -79,21 +81,36 @@ class MLPBackbone(nn.Module):
         return x
 
     
+    
+class SkipMLPBackbone(nn.Module):
+    """
+    ## MLP backbone
+    """
 
-
-
-class CMLPBackbone(torch.nn.Module):
     def __init__(
-        self, seq_channels, seq_length, hidden_size, latent_dim, n_layers=1
+        self,
+        seq_channels: int,
+        seq_length: int,
+        hidden_size: int,
+        latent_dim: int,
+        n_layers: int = 3,
+        norm:bool = False,
+        **kwargs,
     ) -> None:
+        """
+        * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
+        * `seq_length` is the number of timesteps in the time series.
+        * `hidden_size` is the hidden size
+        * `n_layers` is the number of MLP
+        """
         super().__init__()
-        self.fft_len = seq_length
-        self.embedder = nn.Linear(seq_channels * self.fft_len, hidden_size).to(torch.cfloat)
-        self.unembedder = nn.Linear(hidden_size, seq_channels * self.fft_len).to(torch.cfloat)
+
+        self.embedder = nn.Linear(seq_channels * seq_length, hidden_size)
+        self.unembedder = nn.Linear(hidden_size, seq_channels * seq_length)
         self.pe = SinusoidalPosEmb(hidden_size)
         self.net = nn.ModuleList(  # type: ignore
             [
-                CMLP(
+                MLP(
                     in_channels=hidden_size,
                     hidden_channels=[hidden_size * 2, hidden_size],
                     dropout=0.1,
@@ -101,113 +118,77 @@ class CMLPBackbone(torch.nn.Module):
                 for _ in range(n_layers)
             ]
         )
-        
-        self.seq_channals = seq_channels
+        self.seq_channels = seq_channels
         self.seq_length = seq_length
-        if hidden_size != latent_dim:
-            self.con_linear = nn.Linear(latent_dim, hidden_size)
-        else:
-            self.con_linear = nn.Identity()
+        # self.con_linear = nn.Identity()
+            
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+        x = self.embedder(x.flatten(1))
+        t = self.pe(t)
+        x = x + t
+        for layer in self.net:
+            x = x + layer(x)
+        x = self.unembedder(x).reshape((-1, self.seq_length, self.seq_channels))
+        if condition is not None:
+            # c = self.con_linear(condition)
+            x = x + condition[0]
+        return x
+    
+class SkipCombineBackbone(nn.Module):
+    """
+    ## MLP backbone
+    """
+    def __init__(
+        self,
+        seq_channels: int,
+        seq_length: int,
+        hidden_size: int,
+        latent_dim: int,
+        n_layers: int = 3,
+        norm:bool = False,
+        **kwargs,
+    ) -> None:
+        """
+        * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
+        * `seq_length` is the number of timesteps in the time series.
+        * `hidden_size` is the hidden size
+        * `n_layers` is the number of MLP
+        """
+        super().__init__()
 
-    def forward(self, x, t: torch.Tensor, condition=None):
-        # Take in ffted data [bs, fft_len, channel]
+        self.embedder = nn.Linear(seq_channels * seq_length, hidden_size)
+        self.unembedder = nn.Linear(hidden_size, seq_channels * seq_length)
+        self.pe = SinusoidalPosEmb(hidden_size)
+        self.net = nn.ModuleList(  # type: ignore
+            [
+                MLP(
+                    in_channels=hidden_size,
+                    hidden_channels=[hidden_size * 2, hidden_size],
+                    dropout=0.1,
+                )
+                for _ in range(n_layers)
+            ]
+        )
+        self.seq_channels = seq_channels
+        self.seq_length = seq_length
+        self.con_linear = nn.Linear(latent_dim, hidden_size)
+            
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
         t = self.pe(t)
         x = x + t
         if condition is not None:
-            c = self.con_linear(condition)
-            x = x + c
+            _, obs_latent = condition
+            x = x + self.con_linear(obs_latent)
+        
         for layer in self.net:
             x = x + layer(x)
-        x = self.unembedder(x).reshape((-1, self.fft_len, self.seq_channals))
-        # output ffted data [bs, fft_len, channel]
-        return x
-
-
-class FreqLinear(torch.nn.Module):
-    def __init__(
-        self, seq_channels, seq_length, hidden_size, latent_dim, n_layer=1
-    ) -> None:
-        super().__init__()
-        rfft_len = seq_length // 2 + 1
-        self.hidden_size = hidden_size
-        self.embedder = nn.Linear(seq_channels, hidden_size)
-
-        # freq compression
-        self.freq_kernel = nn.Sequential()
-        freq_in_channel = [rfft_len]
-        for i in range(n_layer):
-            freq_out_channel = freq_in_channel[i] // 2
-            self.freq_kernel.append(
-                nn.Linear(freq_in_channel[i], freq_out_channel).to(torch.cfloat)
-            )
-            self.freq_kernel.append(ComplexRELU())
-            freq_in_channel.append(freq_out_channel)
-
-        # channel compression
-        self.channel_kernel = nn.Sequential()
-        hidden_in_channel = [hidden_size]
-        for i in range(n_layer):
-            hidden_out_channel = hidden_in_channel[i] // 2
-            self.channel_kernel.append(
-                nn.Linear(hidden_in_channel[i], hidden_out_channel).to(torch.cfloat)
-            )
-            self.channel_kernel.append(ComplexRELU())
-            hidden_in_channel.append(hidden_out_channel)
-
-        # # channel extension
-        # self.channel_kernel_up = nn.Sequential()
-        # for i in range(n_layer):
-        #     hidden_out_channel = hidden_in_channel[-i-2]
-        #     self.channel_kernel_up.append(nn.Linear(hidden_in_channel[-i-1], hidden_out_channel).to(torch.cfloat))
-        #     self.channel_kernel_up.append(ComplexRELU())
-
-        # # freq extension
-        # self.freq_kernel_up = nn.Sequential()
-        # for i in range(n_layer):
-        #     freq_out_channel = freq_in_channel[-i-2]
-        #     self.freq_kernel_up.append(nn.Linear(freq_in_channel[-i-1], freq_out_channel).to(torch.cfloat))
-        #     self.freq_kernel_up.append(ComplexRELU())
-
-        self.linear = torch.nn.Linear(
-            hidden_out_channel * freq_out_channel, hidden_size
-        ).to(torch.cfloat)
-        self.linear_out = torch.nn.Linear(hidden_size, rfft_len * seq_channels).to(
-            torch.cfloat
-        )
-        self.pe = SinusoidalPosEmb(hidden_size)
-        self.rfft_len = rfft_len
-        self.seq_channels = seq_channels
-
-        if hidden_size != latent_dim:
-            self.con_linear = nn.Linear(latent_dim, hidden_size)
-        else:
-            self.con_linear = nn.Identity()
-
-    def forward(self, x, t: torch.Tensor, condition=None):
-        t = self.pe(t)
+        x = self.unembedder(x).reshape((-1, self.seq_length, self.seq_channels))
         if condition is not None:
-            c = self.con_linear(condition)
-            t = t + c  # [bs, hiddensize]
-
-        x = self.embedder(x)  # [bs, seq_len, hidden_size]
-        x = x + t.unsqueeze(1)
-
-        x = torch.fft.rfft(x, norm="ortho", dim=1)  # [bs, rfft_len, hidden_size]
-        x = self.freq_kernel(x.permute(0, 2, 1)).permute(
-            0, 2, 1
-        )  # [bs, rfft_len, hidden_size]
-        x = self.channel_kernel(x)  # [bs, rfft_len, kernel_size]
-
-        # x = self.linear(x)  # [bs, rfft_len, dim]
-        x = self.linear(x.flatten(1))
-        # x = x + t
-        x = self.linear_out(x).reshape(
-            -1, self.rfft_len, self.seq_channels
-        )  # [bs, rfft_len, dim]
-        x = torch.fft.irfft(x, norm="ortho", dim=1)
-        
+            x_pred, _ = condition
+            x = x + x_pred
         return x
+
 
 
 class ResNetBackbone(nn.Module):

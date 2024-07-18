@@ -17,16 +17,36 @@ from neuralforecast.models import (
     PatchTST,
     TimesNet,
 )
+from sklearn.preprocessing import StandardScaler
+
 
 logging.getLogger("pytorch_lightning").setLevel(logging.WARNING)
 
+nips_dataset = [
+    "ETTh1",
+    "ETTh2",
+    "ETTm1",
+    "ETTm2",
+    "ECL",
+    "Exchange",
+    "TrafficL",
+    "Weather",
+    "ILI",
+]
+
+
 def main(args):
-    Y_df, _, _ = LongHorizon.load(directory=args["data_dir"], group=args["dataset"])
+    if args["dataset"] in nips_dataset:
+        Y_df, _, _ = LongHorizon.load(directory=args["data_dir"], group=args["dataset"])
+    else:
+        Y_df = pd.read_csv(os.path.join(args["data_dir"], args["dataset"] + ".csv"))
+        
     Y_df["ds"] = pd.to_datetime(Y_df["ds"])
     if args["task"] == "U":
         Y_df = Y_df[Y_df["unique_id"] == "OT"]
 
-    n_series = len(Y_df.groupby('unique_id'))
+    n_series = len(Y_df.groupby("unique_id"))
+    n_timestep = len(Y_df.groupby("ds"))
     if args["dataset"].__contains__("ETTh"):
         num_train = 12 * 30 * 24
         num_test = 4 * 30 * 24
@@ -36,9 +56,10 @@ def main(args):
         num_test = 4 * 30 * 24 * 4
         num_vali = 4 * 30 * 24 * 4
     else:
-        num_train = int(len(Y_df) * 0.7)
-        num_test = int(len(Y_df) * 0.2)
-        num_vali = len(Y_df) - num_train - num_test
+        num_train = int(n_timestep * 0.7)
+        num_test = int(n_timestep * 0.2)
+        num_vali = n_timestep - num_train - num_test
+    print(n_timestep, num_train, num_test)
     # print(num_test, num_train)
     # print(LongHorizonInfo[args["dataset"]].test_size, LongHorizonInfo[args["dataset"]].val_size)
     # return 0
@@ -128,22 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("--task", default="U", type=str, choices=["M", "U"])
     parser.add_argument("--seq_len", default=96, type=int)
     parser.add_argument("--pred_len", default=96, type=int)
-    parser.add_argument(
-        "--dataset",
-        default="ETTh1",
-        type=str,
-        choices=[
-            "ETTh1",
-            "ETTh2",
-            "ETTm1",
-            "ETTm2",
-            "ECL",
-            "Exchange",
-            "TrafficL",
-            "Weather",
-            "ILI",
-        ],
-    )
+    parser.add_argument("--dataset", default="ETTh1", type=str)
     parser.add_argument("--fast_dev_run", action="store_true")
     args = parser.parse_args()
     args = vars(args)
@@ -157,11 +163,11 @@ if __name__ == "__main__":
     for i in range(args["num_train"]):
         args["n"] = i
         out_dict = main(args)
-        metric_df = pd.DataFrame(out_dict, index=['MAE','MSE','CRPS']).T
-        metric_df['iter'] = i
+        metric_df = pd.DataFrame(out_dict, index=["MAE", "MSE", "CRPS"]).T
+        metric_df["iter"] = i
         all_out_dict.append(metric_df)
     metric_df_all = pd.concat(all_out_dict)
     metric_df_all.to_csv(os.path.join(folder, "results.csv"))
 
-    # with open(os.path.join(folder, "benchmarks.pkl"), "wb") as f:
-    #     pickle.dump(all_out_dict, f)
+    with open(os.path.join(folder, "benchmarks.pkl"), "wb") as f:
+        pickle.dump(all_out_dict, f)

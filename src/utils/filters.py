@@ -52,16 +52,17 @@ class MovingAvgFreq(torch.nn.Module):
         kernel_size: int,
         seq_length: int,
         sample_rate: float = 1.0,
-        real_imag: bool = True,
+        # real_imag: bool = True,
     ):
         super().__init__()
+        self.seq_len = seq_length
         freq = torch.fft.rfftfreq(seq_length)
         omega = 2 * torch.pi * freq / sample_rate
         coeff = torch.exp(-1j * omega * (kernel_size - 1) / 2) / kernel_size
         omega = torch.where(omega == 0, 1e-5, omega)
         Hw = coeff * torch.sin(omega * kernel_size / 2) / torch.sin(omega / 2)
         self.Hw = Hw.reshape(1, -1, 1)
-        self.real_imag = real_imag
+        # self.real_imag = real_imag
 
     def forward(self, x: torch.Tensor):
         """_summary_
@@ -78,5 +79,5 @@ class MovingAvgFreq(torch.nn.Module):
         else:
             # print('first2complex')
             x_filtered = real_imag_to_complex_freq(x) * self.Hw.to(x.device)
-            x_filtered = complex_freq_to_real_imag(x_filtered)
+            x_filtered = complex_freq_to_real_imag(x_filtered, self.seq_len)
         return x_filtered

@@ -1,6 +1,6 @@
 bb_config:
-  name: ResNetBackbone
-  hidden_size: 128
+  name: MLPBackbone
+  hidden_size: 512
   n_layers: 3
 
 cn_config:
@@ -9,8 +9,8 @@ cn_config:
   latent_dim: 128
 
 diff_config:
-  name: MADTime
-  noise_schedule: std
+  name: MADFreq
+  noise_schedule: freqresp
   norm: on
   pred_diff: on
 

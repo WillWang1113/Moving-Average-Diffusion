@@ -147,47 +147,49 @@ if __name__ == "__main__":
     # all_df.to_csv(os.path.join(save_dir, 'bench_result.csv'))
     # # print(all_df.to_latex(float_format="{:.3f}".format))
 
-    # # SAVE METRICS
-    # ds = {
-    #     "ETTh1": "etth1",
-    #     "ETTh2": "etth2",
-    #     "ETTm1": "ettm1",
-    #     "ETTm2": "ettm1",
-    #     "ECL": "electricity",
-    #     "Exchange": "exchange_rate",
-    #     "TrafficL": "traffic",
-    #     "Weather": "weather",
-    # }
-    # pred_len = [96, 192, 336, 720]
-    # save_dir = "assets/"
-    # all_df = []
-    # for d in ds:
-    #     real_d = ds[d]
-    #     ds_df = []
-    #     for pl in pred_len:
-    #         result_path = os.path.join(save_dir, f"{real_d}_{pl}_MADFreq_fast_dtm.csv")
-    #         df = pd.read_csv(result_path, index_col=0)
-    #         df = df.drop(columns=["MAE", "granularity"])
-    #         df["method"] = "MAD-F"
-    #         df = df.set_index("method")
-    #         df = df.stack()
-    #         df = pd.DataFrame(df, columns=[pl]).transpose()
-    #         ds_df.append(df)
+    # SAVE METRICS
+    ds = {
+        "ETTh1": "etth1",
+        "ETTh2": "etth2",
+        "ETTm1": "ettm1",
+        "ETTm2": "ettm2",
+        "ECL": "electricity",
+        "Exchange": "exchange_rate",
+        "TrafficL": "traffic",
+        "Weather": "weather",
+    }
+    pred_len = [96, 192, 336, 720]
+    save_dir = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/"
+    all_df = []
+    for d in ds:
+        real_d = ds[d]
+        ds_df = []
+        for pl in pred_len:
+            result_path = os.path.join(save_dir, f"{real_d}_{pl}_S","MADFreq", "fast_dtm_.csv")
+            df = pd.read_csv(result_path, index_col=0)
+            
+            df = df.drop(columns=["MAE", "granularity"])
+            df["method"] = "MAD-F"
+            df = df.set_index("method")
+            df = df.stack()
+            df = pd.DataFrame(df, columns=[pl]).transpose()
+            ds_df.append(df)
     
-    #     ds_df = pd.concat(ds_df)
-    #     ds_df.index.name = 'pred_len'
-    #     ds_df['dataset'] = d
-    #     ds_df = ds_df.reset_index()
-    #     ds_df = ds_df.set_index(['dataset','pred_len'])
-    #     all_df.append(ds_df)
-    # all_df = pd.concat(all_df)
+        ds_df = pd.concat(ds_df)
+        ds_df.index.name = 'pred_len'
+        ds_df['dataset'] = d
+        ds_df = ds_df.reset_index()
+        ds_df = ds_df.set_index(['dataset','pred_len'])
+        all_df.append(ds_df)
+    all_df = pd.concat(all_df)
+    print(all_df)
 
-    # all_bench_df = pd.read_csv('/mnt/ExtraDisk/wcx/research/benchmarks/bench_result.csv', index_col=[0,1], header=[0,1])
-    # all_df = pd.concat([all_df, all_bench_df], axis=1)
-    # print(all_df)
-    # all_df.to_csv(os.path.join(save_dir, 'result.csv'))
-    # # # print(all_df.to_latex(float_format="{:.3f}".format))
+    all_bench_df = pd.read_csv('/mnt/ExtraDisk/wcx/research/benchmarks/bench_result.csv', index_col=[0,1], header=[0,1])
+    all_df = pd.concat([all_df, all_bench_df], axis=1)
+    print(all_df)
+    all_df.to_csv(os.path.join(save_dir, 'result.csv'))
+    print(all_df.to_latex(float_format="{:.3f}".format))
 
-    import pandas as pd
-    df = pd.read_csv("assets/result.csv", index_col=[0,1], header=[0,1])
-    print(df.to_latex(float_format="{:.4f}".format))
+    # import pandas as pd
+    # df = pd.read_csv("assets/result.csv", index_col=[0,1], header=[0,1])
+    # print(df.to_latex(float_format="{:.4f}".format))

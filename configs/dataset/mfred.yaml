@@ -1,8 +1,8 @@
 data: custom
-root_path: /mnt/ExtraDisk/wcx/research/FrequencyDiffusion
-data_path: dataset/MFRED_clean.csv
+root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
+data_path: MFRED/MFRED.csv
 features: S
-target: value
+target: OT
 num_workers: 1
 seq_len: 288
 pred_len: 288

@@ -2,14 +2,15 @@ import sys
 import torch
 import tqdm
 import os
-from src.utils.filters import MovingAvgTime
+from src.utils.filters import MovingAvgTime, MovingAvgFreq
 
 thismodule = sys.modules[__name__]
 
+
 def get_schedule(noise_name, data_name, n_steps, train_dl=None, check_pth=None):
     if noise_name != "std":
-        assert noise_name in ['linear', 'cosine', 'zero']
-        fn = getattr(thismodule, noise_name)
+        assert noise_name in ["linear", "cosine", "zero", "freqresp"]
+        fn = getattr(thismodule, noise_name + "_schedule")
         return fn(n_steps)
 
     else:
@@ -72,11 +73,6 @@ def zero_schedule(n_steps):
         "betas": torch.zeros(n_steps).float(),
     }
 
-    return (
-        torch.ones(n_steps).float(),
-        torch.zeros(n_steps).float(),
-    )  # Clip betas to be within specified range
-
 
 def std_schedule(data_name, train_dl, check_pth):
     batch = next(iter(train_dl))
@@ -125,3 +121,25 @@ def std_schedule(data_name, train_dl, check_pth):
             "betas": torch.sqrt(1 - all_ratio**2).float(),
         }
         return all_ratio, torch.sqrt(1 - all_ratio**2)
+
+
+def freqresp_schedule(n_steps):
+    seq_len = n_steps + 1
+    fr = [MovingAvgFreq(i, seq_len).Hw.flatten() for i in range(2, seq_len + 1)]
+    fr = torch.stack(fr)  # [steps, seq_len//2 + 1]
+    fr = 1 - (fr.conj() * fr).real
+    fr = torch.sqrt(fr + 1e-6)
+    fr[:, 0] = torch.ones_like(fr[:, 0]) * 1e-5
+    fr_im = fr.clone()
+    fr_im = fr_im[:, 1:]
+    if seq_len % 2 == 0:
+        fr_im = fr_im[:, :-1]
+    fr_cat = torch.cat([fr, fr_im], dim=1)  # [steps, seq_len]
+    assert fr_cat.shape[0] == n_steps
+    assert fr_cat.shape[1] == seq_len
+    return {
+        "alpha_bars": None,
+        "betas_bars": None,
+        "alphas": None,
+        "betas": fr_cat.float(),
+    }

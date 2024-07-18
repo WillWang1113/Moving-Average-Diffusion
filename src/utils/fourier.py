@@ -18,7 +18,7 @@ def dft(x: torch.Tensor, real_imag=True) -> torch.Tensor:
     dft_full = rfft(x, dim=1, norm="ortho")
     if real_imag:
         # Concatenate real and imaginary parts
-        x_tilde = complex_freq_to_real_imag(dft_full)
+        x_tilde = complex_freq_to_real_imag(dft_full, x.shape[1])
         # assert (
         #     x_tilde.size() == x.size()
         # ), f"The DFT and the input should have the same size. Got {x_tilde.size()} and {x.size()} instead."
@@ -78,8 +78,8 @@ def real_imag_to_complex_freq(x: torch.Tensor):
     return x_freq
 
 
-def complex_freq_to_real_imag(dft_full: torch.Tensor):
-    max_len = 2 * (dft_full.shape[1] - 1)
+def complex_freq_to_real_imag(dft_full: torch.Tensor, seq_len: int):
+    max_len = seq_len
 
     # Compute the FFT until the Nyquist frequency
     dft_re = torch.real(dft_full)
