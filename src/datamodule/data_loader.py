@@ -322,6 +322,8 @@ class Dataset_Custom(Dataset):
             data = self.scaler.transform(df_data.values)
         else:
             data = df_data.values
+            
+        print(data.shape)
 
         # df_stamp = df_raw[["date"]][border1:border2]
         # df_stamp["date"] = pd.to_datetime(df_stamp.date)

@@ -128,6 +128,9 @@ class Trainer:
                     batch[k] = batch[k].to(self.device)
                 loss = model.train_step(batch)
 
+                for n, p in model.named_parameters():
+                    if n.__contains__('backbone') and n.__contains__('net'):
+                        loss += self.alpha * torch.norm(p, p=1)
                 # if self.alpha > 0:
                 #     for p in model.get_params():
                 #         loss += 0.5 * self.alpha * (p * p).sum()
@@ -183,8 +186,7 @@ class Trainer:
         model.to(self.device)
         model.eval()
         all_pred, all_label = [], []
-        for batch in dataloader:
-            # start = time.time()
+        for batch in tqdm(dataloader, ncols=100):
             for k in batch:
                 batch[k] = batch[k].to(self.device)
             all_label.append(batch["future_data"].cpu())

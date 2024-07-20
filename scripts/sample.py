@@ -73,7 +73,7 @@ def main(args):
         else:
             sigmas = torch.linspace(0.2, 0.1, len(diff.betas))
 
-        diff.config_sampling(args.n_sample, sigmas, sample_steps, args.collect_all)
+        diff.config_sampling(args.n_sample, sigmas, sample_steps, args.collect_all, flatten_nosie=False)
         y_pred, y_real = trainer.predict(diff, test_dl)
         print("finish predicting")
         assert len(y_real) == len(y_pred)

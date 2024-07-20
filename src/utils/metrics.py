@@ -81,7 +81,7 @@ def calculate_metrics(
         print("Evaluate on highest resolution")
         assert y_pred.ndim == 4
         assert y_pred[0].shape == y_real.shape
-        y_pred_point = np.median(y_pred, axis=0)
+        y_pred_point = np.mean(y_pred, axis=0)
         y_pred_q = np.quantile(y_pred, quantiles, axis=0)
         y_pred_q = np.transpose(y_pred_q, (1,2,3,0))
         print(y_pred_q.shape)

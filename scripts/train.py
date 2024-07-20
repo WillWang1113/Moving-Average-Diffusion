@@ -12,6 +12,7 @@ from src.utils.parser import exp_parser
 from src.utils.train import Trainer, get_expname_, setup_seed
 from src.utils.schedule import get_schedule
 import json
+from torchinfo import summary
 
 
 # root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
@@ -105,6 +106,10 @@ def main(args, n):
         noise_schedule=noise_schedule,
         **model_config["diff_config"],
     )
+
+    if n == 0:
+        summary(diff)
+    # return 0
 
     trainer = Trainer(
         smoke_test=args["smoke_test"],

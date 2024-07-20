@@ -6,91 +6,91 @@ from torch.nn import AvgPool1d, functional
 import matplotlib.pyplot as plt
 
 
-class Sampler:
-    def __init__(self, diffusion: BaseDiffusion, n_sample: int, scaler) -> None:
-        self.diffusion = diffusion
-        self.n_sample = n_sample
-        self.device = "cuda"
-        # self.device = diffusion.get_params()[0].device
-        self.scaler = scaler
-        if isinstance(diffusion, BaseDiffusion):
-            self.freq_kw = diffusion.freq_kw
+# class Sampler:
+#     def __init__(self, diffusion: BaseDiffusion, n_sample: int, scaler) -> None:
+#         self.diffusion = diffusion
+#         self.n_sample = n_sample
+#         self.device = "cuda"
+#         # self.device = diffusion.get_params()[0].device
+#         self.scaler = scaler
+#         if isinstance(diffusion, BaseDiffusion):
+#             self.freq_kw = diffusion.freq_kw
 
-    def sample(self, test_dataloader, smoke_test=False, collect_all=False):
-        # FOR PROBABILISITC MODELS
-        self._set_mode("val")
-        y_pred, y_real = [], []
-        for batch in test_dataloader:
-            for k in batch:
-                batch[k] = batch[k].to(self.device)
-            target = batch.pop("future_data")
-            # target_shape = target.shape
-            noise = self.diffusion.init_noise(target, batch, self.n_sample)
-            samples = []
-            for i in range(self.n_sample):
-                s = self.diffusion.sample(noise[i], batch, collect_all)
-                samples.append(s)
-            samples = torch.stack(samples)
-            print(samples.shape)
-            # samples = s.reshape((self.n_sample, target.shape[0], *s.shape[1:]))
+#     def sample(self, test_dataloader, smoke_test=False, collect_all=False):
+#         # FOR PROBABILISITC MODELS
+#         self._set_mode("val")
+#         y_pred, y_real = [], []
+#         for batch in test_dataloader:
+#             for k in batch:
+#                 batch[k] = batch[k].to(self.device)
+#             target = batch.pop("future_data")
+#             # target_shape = target.shape
+#             noise = self.diffusion.init_noise(target, batch, self.n_sample)
+#             samples = []
+#             for i in range(self.n_sample):
+#                 s = self.diffusion.sample(noise[i], batch, collect_all)
+#                 samples.append(s)
+#             samples = torch.stack(samples)
+#             print(samples.shape)
+#             # samples = s.reshape((self.n_sample, target.shape[0], *s.shape[1:]))
 
-            y_pred.append(samples)
-            y_real.append(target)
-            if smoke_test:
-                break
-        y_pred = torch.concat(y_pred, dim=1).detach().cpu()
-        y_real = torch.concat(y_real).detach().cpu()
+#             y_pred.append(samples)
+#             y_real.append(target)
+#             if smoke_test:
+#                 break
+#         y_pred = torch.concat(y_pred, dim=1).detach().cpu()
+#         y_real = torch.concat(y_real).detach().cpu()
 
-        if self.scaler is not None:
-            print("--" * 30, "inverse transform", "--" * 30)
-            mean, std = self.scaler["data"]
-            target = self.scaler["target"]
-            y_pred = y_pred * std[target] + mean[target]
-            y_real = y_real * std[target] + mean[target]
-        return y_pred.numpy(), y_real.numpy()
+#         if self.scaler is not None:
+#             print("--" * 30, "inverse transform", "--" * 30)
+#             mean, std = self.scaler["data"]
+#             target = self.scaler["target"]
+#             y_pred = y_pred * std[target] + mean[target]
+#             y_real = y_real * std[target] + mean[target]
+#         return y_pred.numpy(), y_real.numpy()
 
-    def predict(self, test_dataloader):
-        # FOR DETERMINISTIC MODELS
-        self._set_mode("val")
-        y_pred, y_real = [], []
-        for batch in test_dataloader:
-            for k in batch:
-                batch[k] = batch[k].to(self.device)
-            target = batch.pop("future_data")
-            # target_shape = target.shape
-            s = self.diffusion(batch["observed_data"], batch["future_features"])
-            y_pred.append(s)
-            y_real.append(target)
-        y_pred = torch.concat(y_pred).detach().cpu()
-        y_real = torch.concat(y_real).detach().cpu()
+#     def predict(self, test_dataloader):
+#         # FOR DETERMINISTIC MODELS
+#         self._set_mode("val")
+#         y_pred, y_real = [], []
+#         for batch in test_dataloader:
+#             for k in batch:
+#                 batch[k] = batch[k].to(self.device)
+#             target = batch.pop("future_data")
+#             # target_shape = target.shape
+#             s = self.diffusion(batch["observed_data"], batch["future_features"])
+#             y_pred.append(s)
+#             y_real.append(target)
+#         y_pred = torch.concat(y_pred).detach().cpu()
+#         y_real = torch.concat(y_real).detach().cpu()
 
-        if self.scaler is not None:
-            print("--" * 30, "inverse transform", "--" * 30)
-            mean, std = self.scaler["data"]
-            target = self.scaler["target"]
-            y_pred = y_pred * std[target] + mean[target]
-            y_real = y_real * std[target] + mean[target]
-        return y_pred.numpy(), y_real.numpy()
+#         if self.scaler is not None:
+#             print("--" * 30, "inverse transform", "--" * 30)
+#             mean, std = self.scaler["data"]
+#             target = self.scaler["target"]
+#             y_pred = y_pred * std[target] + mean[target]
+#             y_real = y_real * std[target] + mean[target]
+#         return y_pred.numpy(), y_real.numpy()
 
-    def _set_mode(self, mode):
-        if isinstance(self.diffusion, BaseDiffusion):
-            if mode == "train":
-                self.diffusion.backbone.train()
-                if self.diffusion.conditioner is not None:
-                    self.diffusion.conditioner.train()
-            elif mode == "val":
-                self.diffusion.backbone.eval()
-                if self.diffusion.conditioner is not None:
-                    self.diffusion.conditioner.eval()
-            else:
-                raise ValueError("no such mode!")
-        else:
-            if mode == "train":
-                self.diffusion.train()
-            elif mode == "val":
-                self.diffusion.eval()
-            else:
-                raise ValueError("no such mode!")
+#     def _set_mode(self, mode):
+#         if isinstance(self.diffusion, BaseDiffusion):
+#             if mode == "train":
+#                 self.diffusion.backbone.train()
+#                 if self.diffusion.conditioner is not None:
+#                     self.diffusion.conditioner.train()
+#             elif mode == "val":
+#                 self.diffusion.backbone.eval()
+#                 if self.diffusion.conditioner is not None:
+#                     self.diffusion.conditioner.eval()
+#             else:
+#                 raise ValueError("no such mode!")
+#         else:
+#             if mode == "train":
+#                 self.diffusion.train()
+#             elif mode == "val":
+#                 self.diffusion.eval()
+#             else:
+#                 raise ValueError("no such mode!")
 
 
 def plot_fcst(y_pred, y_real, save_name, kernel_size: list = None):
@@ -100,14 +100,16 @@ def plot_fcst(y_pred, y_real, save_name, kernel_size: list = None):
     if isinstance(y_pred, np.ndarray):
         n_sample = y_pred.shape[0]
         bs = y_pred.shape[1]
+        n_series = y_real.shape[-1]
         for k in range(len(ax)):
             choose = np.random.randint(0, bs)
-            sample_real = y_real[choose, :, 0]
-            sample_pred = y_pred[:, choose, :, 0].T
+            chn_choose = np.random.randint(0, n_series)
+            sample_real = y_real[choose, :, chn_choose]
+            sample_pred = y_pred[:, choose, :, chn_choose].T
             ax[k].plot(sample_real, label="real")
             ax[k].plot(sample_pred, c="black", alpha=1 / n_sample)
             ax[k].legend()
-            ax[k].set_title(f"sample no. {choose}")
+            ax[k].set_title(f"sample {choose}, chn {chn_choose}")
     else:
         n_sample = y_pred[0].shape[0]
         choose = 99
