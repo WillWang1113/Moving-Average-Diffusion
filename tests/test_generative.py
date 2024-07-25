@@ -11,8 +11,8 @@ from src.utils.parser import exp_parser
 from src.utils.train import Trainer, get_expname_, setup_seed
 import json
 
-root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
-# root_pth = "/home/user/data/FrequencyDiffusion/savings"
+# root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
+root_pth = "/home/user/data/FrequencyDiffusion/savings"
 setup_seed()
 
 
@@ -151,17 +151,18 @@ if __name__ == "__main__":
     ds = {
         "ETTh1": "etth1",
         "ETTh2": "etth2",
-        # "ETTm1": "ettm1",
-        # "ETTm2": "ettm2",
+        "ETTm1": "ettm1",
+        "ETTm2": "ettm2",
         "ECL": "electricity",
         "Exchange": "exchange_rate",
         "TrafficL": "traffic",
         "Weather": "weather",
     }
 
-    model_name = "MADfreq_FR"
+    model_name = "MADfreq_v2"
     pred_len = [96, 192, 336, 720]
-    save_dir = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/"
+    # save_dir = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/"
+    save_dir = root_pth
     all_df = []
     for d in ds:
         real_d = ds[d]
@@ -186,14 +187,15 @@ if __name__ == "__main__":
         all_df.append(ds_df)
     all_df = pd.concat(all_df)
     print(all_df)
+    # all_df.to_csv('')
 
-    all_bench_df = pd.read_csv(
-        '/mnt/ExtraDisk/wcx/research/benchmarks/bench_result.csv',
-        index_col=[0, 1],
-        header=[0, 1])
-    all_df = pd.concat([all_df, all_bench_df], axis=1)
-    print(all_df)
-    # all_df.to_csv(os.path.join(save_dir, 'result.csv'))
+    # all_bench_df = pd.read_csv(
+    #     '/mnt/ExtraDisk/wcx/research/benchmarks/bench_result.csv',
+    #     index_col=[0, 1],
+    #     header=[0, 1])
+    # all_df = pd.concat([all_df, all_bench_df], axis=1)
+    # print(all_df)
+    all_df.to_csv(os.path.join(save_dir, 'result.csv'))
     # print(all_df.to_latex(float_format="{:.3f}".format))
 
     # import pandas as pd

@@ -84,7 +84,6 @@ def calculate_metrics(
         y_pred_point = np.mean(y_pred, axis=0)
         y_pred_q = np.quantile(y_pred, quantiles, axis=0)
         y_pred_q = np.transpose(y_pred_q, (1,2,3,0))
-        print(y_pred_q.shape)
 
         MAE = mae(y_real, y_pred_point)
         MSE = mse(y_real, y_pred_point)
@@ -93,10 +92,13 @@ def calculate_metrics(
         # MAE = mae(y_pred, y_real, normalize)
         # CRPS = crps(y_pred, y_real)
         # MPBL = mpbl(y_pred, y_real)
-        return (MAE, MSE, MQL)
+        return (MAE, MSE, MQL), y_pred_q, y_pred_point
     elif isinstance(y_pred, list) and isinstance(y_real, list):
         print("Evaluate on multi resolutions")
         all_res_metric = []
+        all_res_pred_q = []
+        all_res_pred_point = []
+        
         for i in range(len(y_pred)):
             res_y_pred, res_y_real = y_pred[i], y_real[i]
 
@@ -111,6 +113,8 @@ def calculate_metrics(
             MQL = mqloss(res_y_real, res_y_pred_q, quantiles=np.array(quantiles))
 
             all_res_metric.append((MAE, MSE, MQL))
+            all_res_pred_q.append(res_y_pred_q)
+            all_res_pred_point.append(all_res_pred_point)
 
 
             # RMSE = rmse(res_y_pred, res_y_real, normalize)
@@ -119,7 +123,7 @@ def calculate_metrics(
             # MPBL = mpbl(res_y_pred, res_y_real)
             # print(RMSE)
             # all_res_metric.append((RMSE, MAE, CRPS, MPBL))
-        return all_res_metric
+        return all_res_metric, all_res_pred_q, all_res_pred_point
     else:
         raise ValueError("wrong y_pred shape")
 

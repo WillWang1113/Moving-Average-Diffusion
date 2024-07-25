@@ -3,6 +3,23 @@ import random
 from datetime import datetime
 import time
 import math
+from gluonts.transform import (
+    Chain,
+    RemoveFields,
+    SetField,
+    AsNumpyArray,
+    AddObservedValuesIndicator,
+    AddTimeFeatures,
+    AddAgeFeature,
+    VstackFeatures,
+    MapTransformation,
+    ExpectedNumInstanceSampler,
+    InstanceSplitter,
+    ExpandDimArray,
+    TestSplitSampler,
+    ValidationSplitSampler,
+)
+from gluonts.dataset.field_names import FieldName
 
 from matplotlib import pyplot as plt
 import torch
@@ -324,5 +341,77 @@ def adjustment(gt, pred):
     return gt, pred
 
 
-def cal_accuracy(y_pred, y_true):
-    return np.mean(y_pred == y_true)
+def filter_metrics(metrics, select={"ND", "NRMSE", "mean_wQuantileLoss"}):
+    return {m: metrics[m].item() for m in select}
+
+
+class ConcatDataset:
+    def __init__(self, test_pairs, axis=-1) -> None:
+        self.test_pairs = test_pairs
+        self.axis = axis
+
+    def _concat(self, test_pairs):
+        for t1, t2 in test_pairs:
+            yield {
+                "target": np.concatenate([t1["target"], t2["target"]], axis=self.axis),
+                "start": t1["start"],
+            }
+    
+    def __len__(self):
+        return len(self.test_pairs)
+
+    def __iter__(self):
+        yield from self._concat(self.test_pairs)
+
+
+def create_splitter(past_length: int, future_length: int, mode: str = "train"):
+    if mode == "train":
+        instance_sampler = ExpectedNumInstanceSampler(
+            num_instances=1,
+            min_past=past_length,
+            min_future=future_length,
+        )
+    elif mode == "val":
+        instance_sampler = ValidationSplitSampler(min_future=future_length)
+    elif mode == "test":
+        instance_sampler = TestSplitSampler()
+
+    splitter = InstanceSplitter(
+        target_field=FieldName.TARGET,
+        is_pad_field=FieldName.IS_PAD,
+        start_field=FieldName.START,
+        forecast_start_field=FieldName.FORECAST_START,
+        instance_sampler=instance_sampler,
+        past_length=past_length,
+        future_length=future_length,
+        time_series_fields=[FieldName.OBSERVED_VALUES],
+    )
+    return splitter
+
+
+def create_transforms(
+    num_feat_dynamic_real,
+    num_feat_static_cat,
+    num_feat_static_real,
+):
+    remove_field_names = []
+    if num_feat_static_real == 0:
+        remove_field_names.append(FieldName.FEAT_STATIC_REAL)
+    if num_feat_dynamic_real == 0:
+        remove_field_names.append(FieldName.FEAT_DYNAMIC_REAL)
+
+    return Chain(
+        [RemoveFields(field_names=remove_field_names)]
+        + (
+            [SetField(output_field=FieldName.FEAT_STATIC_CAT, value=[0])]
+            if not num_feat_static_cat > 0
+            else []
+        )
+        + [
+            AddObservedValuesIndicator(
+                target_field=FieldName.TARGET,
+                output_field=FieldName.OBSERVED_VALUES,
+            ),
+            ExpandDimArray(field=FieldName.TARGET, axis=0)  
+        ]
+    )

@@ -53,8 +53,8 @@ class MLPConditioner(nn.Module):
         #     self.mu_net = nn.Linear(latent_dim, 1 * seq_channels)
         #     self.std_net = nn.Linear(latent_dim, 1 * seq_channels)
 
-    def forward(self, observed_data, future_features=None, **kwargs):
-        x = observed_data
+    def forward(self, past_target, future_features=None, **kwargs):
+        x = past_target
         trajs_to_encode = x.flatten(1)  # (batch_size, input_ts, input_dim)
 
         # # TEST: frequency encoding

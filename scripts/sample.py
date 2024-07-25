@@ -84,7 +84,7 @@ def main(args):
         else:
             y_pred = y_pred.cpu().numpy()
             y_real = y_real.cpu().numpy()
-        m = calculate_metrics(y_pred, y_real, quantiles)
+        m, y_pred_q, y_pred_point = calculate_metrics(y_pred, y_real, quantiles)
         print(m)
         avg_m.append(m)
         if i in [0, "t"]:
@@ -92,6 +92,7 @@ def main(args):
             plot_fcst(
                 y_pred,
                 y_real,
+                y_pred_point=y_pred_point,
                 kernel_size=kernel_size,
                 save_name=os.path.join(
                     exp_path,

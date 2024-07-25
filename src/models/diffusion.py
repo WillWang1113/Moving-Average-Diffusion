@@ -171,34 +171,35 @@ class MADTime(BaseDiffusion):
         loss = self._get_loss(x, batch)
         return loss
 
-    @torch.no_grad
+    @torch.inference_mode()
     def validation_step(self, batch):
         x = batch.pop("future_data")
         loss = self._get_loss(x, batch)
         return loss
 
-    @torch.no_grad
+    @torch.inference_mode()
     def predict_step(self, batch):
         assert self._sample_ready
         x_real = batch.pop("future_data")
         # condition = batch["condition"]
-        x = self._init_noise(x_real, batch)
-        c = self._encode_condition(batch)
         if self.flat_noise:
+            x = self._init_noise(x_real, batch)
+            c = self._encode_condition(batch)
             x = x.flatten(end_dim=1)
             x, all_x, mu, std = self._sample_loop(x, c)
             if self.collect_all:
                 all_x[0] = all_x[0] + mu
                 out_x = torch.stack(all_x, dim=-1)
-                out_x = out_x.reshape(self.n_sample, *x_real.shape,
-                                      -1).detach()
+                out_x = out_x.reshape(self.n_sample, *x_real.shape, -1).detach()
             else:
                 out_x = x * std + mu
                 out_x = out_x.reshape(self.n_sample, *x_real.shape).detach()
         else:
+            c = self._encode_condition(batch)
             all_out_x = []
-            for i in range(x.shape[0]):
-                x_out, all_x, mu, std = self._sample_loop(x[i], c)
+            for i in range(self.n_sample):
+                x = self._init_noise(x_real, batch)
+                x_out, all_x, mu, std = self._sample_loop(x, c)
                 if self.collect_all:
                     all_x[0] = all_x[0] + mu
                     out_x = torch.stack(all_x, dim=-1)
@@ -207,6 +208,7 @@ class MADTime(BaseDiffusion):
                     out_x = x_out * std + mu
                     out_x = out_x.reshape(*x_real.shape).detach()
                 all_out_x.append(out_x.cpu())
+
             out_x = torch.stack(all_out_x)
 
         return out_x
@@ -278,12 +280,15 @@ class MADTime(BaseDiffusion):
                 dtype=time_value.dtype) if self.norm else time_value
             prev_value = prev_value.expand(-1, x.shape[1], -1)
 
-            noise = (prev_value + torch.randn(
-                self.n_sample,
-                *prev_value.shape,
-                device=device,
-                dtype=prev_value.dtype,
-            ))
+            if self.flat_noise:
+                noise = prev_value + torch.randn(
+                    self.n_sample,
+                    *prev_value.shape,
+                    device=device,
+                    dtype=prev_value.dtype,
+                )
+            else:
+                noise = prev_value + torch.randn_like(prev_value)
 
         else:
             # condition on given target

@@ -1,23 +1,18 @@
 import argparse
+import json
 import os
-
-import numpy as np
 import torch
 import yaml
+from lightning import Trainer
+from lightning.fabric import seed_everything
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
+from lightning.pytorch.callbacks import ModelCheckpoint
 
-from src.datamodule import dataset
 from src.datamodule.data_factory import data_provider
-from src.models import diffusion
+from src.models import diffusion_pl
 from src.utils.parser import exp_parser
-from src.utils.train import Trainer, get_expname_, setup_seed
 from src.utils.schedule import get_schedule
-import json
-from torchinfo import summary
-
-
-# root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
-# root_pth = "/home/user/data/FrequencyDiffusion/savings"
-
+from src.utils.metrics import calculate_metrics
 
 
 def prepare_train(model_config, data_config, args, n):
@@ -33,9 +28,11 @@ def prepare_train(model_config, data_config, args, n):
     # train_dl, val_dl, test_dl, scaler = data_fn(data_config)
 
     df_ = model_config["diff_config"].pop("name")
-    df = getattr(diffusion, df_)
+    df = getattr(diffusion_pl, df_)
+    print(df)
     data_folder = os.path.join(
-        root_pth, f"{args['data_config']}_{data_config['pred_len']}_{data_config['features']}"
+        root_pth,
+        f"{args['data_config']}_{data_config['pred_len']}_{data_config['features']}",
     )
     save_folder = os.path.join(data_folder, args["model_config"])
     # save_folder = os.path.join(data_folder, df_, exp_name)
@@ -72,12 +69,14 @@ def prepare_train(model_config, data_config, args, n):
     model_config["cn_config"]["target_seq_channels"] = target_seq_channels
     ns_name = model_config["diff_config"].pop("noise_schedule")
     n_steps = (
-        target_seq_length - 1 if df_.__contains__('MAD') else model_config["diff_config"]["T"]
+        target_seq_length - 1
+        if df_.__contains__("MAD")
+        else model_config["diff_config"]["T"]
     )
     noise_schedule = get_schedule(
         ns_name, args["data_config"], n_steps, train_dl, check_pth=data_folder
     )
-    return model_config, noise_schedule, df, save_folder, train_dl, val_dl
+    return model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl
 
 
 def main(args, n):
@@ -95,39 +94,56 @@ def main(args, n):
     )
     model_config = exp_parser(model_config, args)
 
-    model_config, noise_schedule, df, save_folder, train_dl, val_dl = (
-        prepare_train(model_config, data_config, args, n)
+    model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl = prepare_train(
+        model_config, data_config, args, n
     )
     # ! MUST SETUP SEED AFTER prepare_train
-    setup_seed(n)
+    # setup_seed(n)
+    seed_everything(n, workers=True)
     diff = df(
         backbone_config=model_config["bb_config"],
         conditioner_config=model_config["cn_config"],
         noise_schedule=noise_schedule,
+        lr=model_config["train_config"]["lr"],
+        alpha=model_config["train_config"]["alpha"],
         **model_config["diff_config"],
     )
-    
 
-    if n == 0:
-        summary(diff)
+    es = EarlyStopping(
+        monitor="val_loss",
+        mode="min",
+        patience=model_config["train_config"]["early_stop"],
+    )
+    mc = ModelCheckpoint(
+        monitor="val_loss",
+        dirpath=save_folder,
+        save_top_k=1
+    )
     # return 0
-
+    # TODO:
     trainer = Trainer(
-        smoke_test=args["smoke_test"],
-        device=device,
-        output_pth=save_folder,
-        exp_name=f"{args['data_config']}_{data_config['pred_len']}_{model_config['diff_config']['norm']}",
-        **model_config["train_config"],
+        max_epochs=model_config["train_config"]["epochs"],
+        deterministic=True,
+        devices=[args["gpu"]],
+        callbacks=[es, mc],
+        default_root_dir=save_folder,
+        # **model_config["train_config"],
     )
 
-    diff = trainer.fit(diff, train_dl, val_dl)
-    for p in diff.parameters():
-        print(p[0,0])
-        break
-    return 0
+    trainer.fit(diff, train_dl, val_dl)
+    # for p in diff.parameters():
+    #     print(p[0,0])
+    #     break
+    # return 0
+
+    torch.save(mc.best_model_path, os.path.join(save_folder, f'best_model_path_{n}.pt'))
+    # diff = df.load_from_checkpoint(checkpoint_path=mc.best_model_path)
+    # diff.config_sampling()
+    # pred = trainer.predict(diff, test_dl)
+    # pred = torch.concat(pred)
+    # print(pred.shape)
     
-    torch.save(diff, os.path.join(save_folder,f"diffusion_{n}.pt"))
-    
+    print(mc.best_model_path)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 # export CUDA_VISIBLE_DEVICES=1
 gpu=1
-model_config=MADfreq_pl
+model_config=MADfreq_gts
 save_dir=/home/user/data/FrequencyDiffusion/savings
 # save_dir=/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings
 
@@ -33,23 +33,23 @@ data_pth=(
 for i in "${pred_len[@]}"; do
   for j in "${data_pth[@]}"; do
     echo $j $i
-    # python -u scripts/train_pl.py \
-    #   -dc $j \
-    #   -mc $model_config \
-    #   --save_dir $save_dir \
-    #   --seq_len $seq_len \
-    #   --pred_len $i \
-    #   --gpu $gpu --num_train 1
-    python scripts/sample_pl.py \
+    python -u scripts/train_gts.py \
+      -dc $j \
+      -mc $model_config \
       --save_dir $save_dir \
-      --dataset $j \
+      --seq_len $seq_len \
       --pred_len $i \
-      --task S \
-      --model_name $model_config \
-      --kind freq \
-      --deterministic \
-      --n_sample 100 \
-      --gpu $gpu --fast_sample --num_train 1
+      --gpu $gpu --num_train 1 --dataset electricity_nips
+    # python scripts/sample_pl.py \
+    #   --save_dir $save_dir \
+    #   --dataset $j \
+    #   --pred_len $i \
+    #   --task S \
+    #   --model_name $model_config \
+    #   --kind freq \
+    #   --deterministic \
+    #   --n_sample 100 \
+    #   --gpu $gpu --fast_sample --num_train 1
 
   done
 done

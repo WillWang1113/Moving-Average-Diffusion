@@ -1,5 +1,6 @@
 data: ETTm2
-root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
+root_path: /home/user/data/THU-timeseries
+# root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
 data_path: ETT-small/ETTm2.csv
 features: S
 target: OT

@@ -93,9 +93,8 @@ import matplotlib.pyplot as plt
 #                 raise ValueError("no such mode!")
 
 
-def plot_fcst(y_pred, y_real, save_name, kernel_size: list = None):
-
-    fig, ax = plt.subplots(4, 4, figsize=[8*1.33,6*1.33])
+def plot_fcst(y_pred, y_real, save_name, kernel_size: list = None, y_pred_point=None):
+    fig, ax = plt.subplots(3, 3, figsize=[8, 6])
     ax = ax.flatten()
     if isinstance(y_pred, np.ndarray):
         n_sample = y_pred.shape[0]
@@ -105,9 +104,23 @@ def plot_fcst(y_pred, y_real, save_name, kernel_size: list = None):
             choose = np.random.randint(0, bs)
             chn_choose = np.random.randint(0, n_series)
             sample_real = y_real[choose, :, chn_choose]
-            sample_pred = y_pred[:, choose, :, chn_choose].T
-            ax[k].plot(sample_real, label="real")
-            ax[k].plot(sample_pred, c="black", alpha=1 / n_sample)
+            sample_pred = y_pred[choose, :, chn_choose, :]
+            if y_pred_point is not None:
+                sample_pred_point = y_pred_point[choose, :, chn_choose]
+            else:
+                sample_pred_point = np.median(sample_pred, axis=-1)
+            ts = range(len(sample_real))
+            ax[k].plot(ts, sample_real, label="real")
+            ax[k].plot(ts, sample_pred_point, label='point')
+            ax[k].fill_between(
+                ts,
+                sample_pred[..., 0],
+                sample_pred[..., -1],
+                # c="black",
+                color="orange",
+                alpha=0.5, label='90PI'
+            )
+            # ax[k].plot(sample_pred, c="black", alpha=1 / n_sample)
             ax[k].legend()
             ax[k].set_title(f"sample {choose}, chn {chn_choose}")
     else:
@@ -141,7 +154,8 @@ def temporal_avg(y_pred: torch.Tensor, y_real: torch.Tensor, kernel_size, kind):
             # res_y_pred: [n_sample * bs, ts, dim]
             res_y_pred = functional.interpolate(
                 res_y_pred.permute(0, 2, 1),
-                size=y_real.shape[1] - kernel_size[i] + 1, mode="nearest-exact"
+                size=y_real.shape[1] - kernel_size[i] + 1,
+                mode="nearest-exact",
             )
             res_y_pred = res_y_pred[..., :: kernel_size[i]].permute(0, 2, 1)
             assert res_y_pred.shape[1:] == res_y_real.shape[1:]
