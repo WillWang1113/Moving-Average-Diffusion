@@ -8,7 +8,7 @@ class GaussianFourierProjection(nn.Module):
     Courtesy of https://colab.research.google.com/drive/120kYYBOVa1i0TD85RjlEkFjaWDxSFUx3?usp=sharing#scrollTo=YyQtV7155Nht
     """
 
-    def __init__(self, latent_dim: int, scale: float = 30.0):
+    def __init__(self, latent_dim: int, scale: float = 1.0):
         super().__init__()
         # Randomly sample weights during initialization. These weights are fixed
         # during optimization and are not trainable.
@@ -32,7 +32,7 @@ class GaussianFourierProjection(nn.Module):
         projected_emb: torch.Tensor = self.dense(t_emb)
 
         return x + projected_emb
-
+    
 
 class RandomOrLearnedSinusoidalPosEmb(nn.Module):
     """following @crowsonkb 's lead with random (learned optional) sinusoidal pos emb"""

@@ -1,14 +1,16 @@
 bb_config:
   name: MLPBackbone
-  hidden_size: 256
-  n_layers: 3
+  d_model: 72
+  d_mlp: 1024
+  # hidden_size: 512
+  n_layers: 10
   dropout: 0.1
   # obs_seq_length: 96
 
 cn_config:
   name: MLPConditioner
-  hidden_size: 256
-  latent_dim: 256
+  hidden_size: 1024
+  latent_dim: 72
 
 diff_config:
   name: MADFreq
@@ -18,7 +20,7 @@ diff_config:
 
 train_config:
   epochs: 10
-  lr: 2.0e-4
+  lr: 1.0e-4
   early_stop: 5
   val_step: 1
   alpha: 1.0e-3

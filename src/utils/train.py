@@ -412,6 +412,6 @@ def create_transforms(
                 target_field=FieldName.TARGET,
                 output_field=FieldName.OBSERVED_VALUES,
             ),
-            ExpandDimArray(field=FieldName.TARGET, axis=0)  
+            # ExpandDimArray(field=FieldName.TARGET, axis=0)  
         ]
     )

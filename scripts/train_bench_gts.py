@@ -6,22 +6,24 @@ from gluonts.dataset.split import OffsetSplitter
 from gluonts.evaluation import (
     make_evaluation_predictions,
     Evaluator,
-    MultivariateEvaluator,
 )
 from gluonts.torch.model.d_linear import DLinearEstimator
-from gluonts.torch.model.i_transformer import ITransformerEstimator
 from gluonts.torch.model.patch_tst import PatchTSTEstimator
-from gluonts.dataset.multivariate_grouper import MultivariateGrouper
+from gluonts.torch.model.tide import TiDEEstimator
+from gluonts.mx.model.n_beats import NBEATSEstimator, NBEATSEnsembleEstimator
+from gluonts.torch.model.deep_npts import (
+    DeepNPTSEstimator,
+)
+from gluonts.mx.trainer import Trainer
 from gluonts.dataset.repository.datasets import dataset_recipes, get_dataset
 from gluonts.evaluation.backtest import make_evaluation_predictions
-from gluonts.evaluation import MultivariateEvaluator
 
 from src.utils.train import (
     ConcatDataset,
     filter_metrics,
 )
 import pandas as pd
-
+from gluonts.torch.distributions import StudentTOutput
 
 def main(args, n):
     seed_everything(n, workers=True)
@@ -40,16 +42,16 @@ def main(args, n):
     context_length = args["seq_len"]
     prediction_length = args["pred_len"]
 
-    train_val_splitter = OffsetSplitter(offset=-prediction_length * num_rolling_evals)
-    _, val_gen = train_val_splitter.split(dataset.train)
+    # train_val_splitter = OffsetSplitter(offset=-prediction_length * num_rolling_evals)
+    # _, val_gen = train_val_splitter.split(dataset.train)
 
-    val_dataset = ConcatDataset(
-        val_gen.generate_instances(prediction_length, num_rolling_evals)
-    )
+    # val_dataset = ConcatDataset(
+    #     val_gen.generate_instances(prediction_length, num_rolling_evals)
+    # )
 
     # train_data = train_grouper(dataset.train)
     train_data = dataset.train
-    val_data = val_dataset
+    # val_data = val_dataset
     # test_data = test_grouper(dataset.test)
     test_data = dataset.test
     trainer_kwargs = dict(
@@ -67,7 +69,19 @@ def main(args, n):
                 batch_size=args["batch_size"],
                 num_batches_per_epoch=args["num_batches_per_epoch"],
                 trainer_kwargs=trainer_kwargs,
-                scaling="std",
+                # scaling="std",
+            ),
+        ),
+        (
+            "TiDE",
+            TiDEEstimator(
+                freq=dataset.metadata.freq,
+                prediction_length=prediction_length,
+                context_length=context_length,
+                batch_size=args["batch_size"],
+                num_batches_per_epoch=args["num_batches_per_epoch"],
+                trainer_kwargs=trainer_kwargs,
+                # scaling="std",
             ),
         ),
         (
@@ -78,39 +92,61 @@ def main(args, n):
                 patch_len=16,
                 batch_size=args["batch_size"],
                 num_batches_per_epoch=args["num_batches_per_epoch"],
-                trainer_kwargs=trainer_kwargs,
-                scaling="std",
             ),
         ),
-        # (
-        #     "ITransformer",
-        #     ITransformerEstimator(
-        #         prediction_length=prediction_length,
-        #         context_length=context_length,
-        #         batch_size=args["batch_size"],
-        #         num_batches_per_epoch=args["num_batches_per_epoch"],
-        #         trainer_kwargs=trainer_kwargs,
-        #         scaling="std",
-        #     ),
-        # ),
+        (
+            "NBEATS",
+            NBEATSEstimator(
+                freq=dataset.metadata.freq,
+                prediction_length=prediction_length,
+                context_length=context_length,
+                trainer=Trainer(
+                    num_batches_per_epoch=args["num_batches_per_epoch"],
+                    epochs=args["epochs"],
+                ),
+                batch_size=args["batch_size"],
+                # num_batches_per_epoch=args["num_batches_per_epoch"],
+                # trainer_kwargs=trainer_kwargs,
+                scale=1,
+            ),
+        ),
+        (
+            "DeepNPTS",
+            DeepNPTSEstimator(
+                freq=dataset.metadata.freq,
+                prediction_length=prediction_length,
+                context_length=context_length,
+                batch_size=args["batch_size"],
+                num_batches_per_epoch=args["num_batches_per_epoch"],
+                epochs=args["epochs"],
+                cache_data=True,
+            ),
+        ),
     ]
-    all_metrics = []
-    for (name, m) in models:
-        m_predictor = m.train(train_data, val_data, cache_data=True)
+    all_metrics = {}
+    for name, m in models:
+        m_predictor = m.train(train_data, cache_data=True)
+        # m_predictor = m.train(train_data, val_data, cache_data=True)
         forecast_it, ts_it = make_evaluation_predictions(
             dataset=test_data, predictor=m_predictor, num_samples=args["num_samples"]
         )
+        if name not in ["NBEATS", "DeepNPTS"]:
+            forecasts = list(f.to_sample_forecast() for f in forecast_it)
+        else:
+            forecasts = list(f for f in forecast_it)
 
-        forecasts = list(f.to_sample_forecast() for f in forecast_it)
         # forecasts = list(forecast_it)
         tss = list(ts_it)
         evaluator = Evaluator()
         # evaluator = MultivariateEvaluator()
         metrics, _ = evaluator(tss, forecasts)
-        metrics = [metrics["mean_wQuantileLoss"],metrics["NRMSE"]]
-        all_metrics.append({name: metrics})
-    all_metrics = pd.DataFrame(all_metrics, aixs=1)
-    print(all_metrics)
+        metrics = [metrics["mean_wQuantileLoss"], metrics["NRMSE"]]
+        all_metrics.update({name: metrics})
+    all_metrics = pd.DataFrame(all_metrics, index=["mean_wQuantileLoss", "NRMSE"])
+    # print(all_metrics)
+    all_metrics.to_csv(
+        os.path.join(args["save_dir"], args["dataset"], f"metric_{args['seq_len']}_{args['pred_len']}_{n}.csv")
+    )
 
 
 if __name__ == "__main__":
@@ -127,7 +163,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_feat_static_real", type=int, default=0)
     parser.add_argument("--num_feat_static_cat", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--num_batches_per_epoch", type=int, default=128)
+    parser.add_argument("--num_batches_per_epoch", type=int, default=100)
     parser.add_argument("--num_samples", type=int, default=100)
     # parser.add_argument("--lr", type=float, default=1e-4)
 

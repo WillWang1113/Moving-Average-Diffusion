@@ -15,7 +15,7 @@ from src.utils.fourier import (
     complex_freq_to_real_imag,
     sphere2complex,
 )
-from .embedding import SinusoidalPosEmb
+from .embedding import SinusoidalPosEmb, GaussianFourierProjection
 from .blocks import (
     CMLP,
     ComplexRELU,
@@ -47,7 +47,9 @@ class MLPBackbone(nn.Module):
         self,
         seq_channels: int,
         seq_length: int,
-        hidden_size: int,
+        d_model:int,
+        d_mlp:int,
+        # hidden_size: int,
         latent_dim: int,
         n_layers: int = 3,
         norm: bool = False,
@@ -62,21 +64,22 @@ class MLPBackbone(nn.Module):
         """
         super().__init__()
 
-        self.embedder = nn.Linear(seq_channels * seq_length, hidden_size)
-        self.unembedder = nn.Linear(hidden_size, seq_channels * seq_length)
-        self.pe = SinusoidalPosEmb(hidden_size)
+        self.embedder = nn.Linear(seq_channels * seq_length, d_model)
+        self.unembedder = nn.Linear(d_model, seq_channels * seq_length)
+        self.pe = SinusoidalPosEmb(d_model)
+        # self.pe = GaussianFourierProjection(d_model)
         self.net = nn.ModuleList(  # type: ignore
             [
                 MLP(
-                    in_channels=hidden_size,
-                    hidden_channels=[hidden_size * 2, hidden_size],
+                    in_channels=d_model,
+                    hidden_channels=[d_mlp, d_model],
                     dropout=dropout,
                 ) for _ in range(n_layers)
             ])
         self.seq_channels = seq_channels
         self.seq_length = seq_length
-        if hidden_size != latent_dim:
-            self.con_linear = nn.Linear(latent_dim, hidden_size)
+        if d_model != latent_dim:
+            self.con_linear = nn.Linear(latent_dim, d_model)
         else:
             self.con_linear = nn.Identity()
 
@@ -86,14 +89,77 @@ class MLPBackbone(nn.Module):
                 condition: torch.Tensor = None):
         x = self.embedder(x.flatten(1))
         t = self.pe(t)
-        x = x + t
-        if condition is not None:
-            c = self.con_linear(condition)
-            x = x + c
+        c = self.con_linear(condition)
+        x = x+t + c
+        # x = self.pe(x, t, use_time_axis=False) + c
         for layer in self.net:
             x = x + layer(x)
+            
+            # x = x + t + c
+        # x = x + c
         x = self.unembedder(x).reshape(
             (-1, self.seq_length, self.seq_channels))
+        return x
+
+
+class FreqMLPBackbone(nn.Module):
+    """
+    ## MLP backbone
+    """
+
+    def __init__(
+        self,
+        seq_channels: int,
+        seq_length: int,
+        hidden_size: int,
+        latent_dim: int,
+        n_layers: int = 3,
+        norm: bool = False,
+        dropout: float = 0.,
+        **kwargs,
+    ) -> None:
+        """
+        * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
+        * `seq_length` is the number of timesteps in the time series.
+        * `hidden_size` is the hidden size
+        * `n_layers` is the number of MLP
+        """
+        super().__init__()
+
+        # self.embedder = nn.Linear(seq_channels * seq_length, hidden_size)
+        # self.unembedder = nn.Linear(hidden_size, seq_channels * seq_length)
+        self.pe = SinusoidalPosEmb(seq_length)
+        self.net = nn.ModuleList(  # type: ignore
+            [
+                MLP(
+                    in_channels=seq_length,
+                    hidden_channels=[seq_length, seq_length],
+                    activation_layer=nn.SiLU
+                    # dropout=dropout,
+                ) for _ in range(n_layers)
+            ])
+        self.seq_channels = seq_channels
+        self.seq_length = seq_length
+        if seq_length != latent_dim:
+            self.con_linear = nn.Linear(latent_dim, seq_length)
+        else:
+            self.con_linear = nn.Identity()
+
+    def forward(self,
+                x: torch.Tensor,
+                t: torch.Tensor,
+                condition: torch.Tensor = None):
+        # x = self.embedder(x.flatten(1))
+        t = torch.sigmoid(self.pe(t))
+        c = self.con_linear(condition).unsqueeze(-1)
+        x = x * t.unsqueeze(-1)
+        for layer in self.net:
+            x = x.permute(0,2,1) + layer(x.permute(0,2,1))
+            x = x.permute(0,2,1) + c
+            # x = x + t + c
+        # x = x + c
+        # x = self.unembedder(x).reshape(
+        #     (-1, self.seq_length, self.seq_channels))
         return x
 
 

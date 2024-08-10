@@ -168,3 +168,4 @@ tests/
 notebooks/test.ipynb
 datasets/
 lightning_logs/
+*.png

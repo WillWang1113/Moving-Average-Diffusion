@@ -231,16 +231,6 @@ class MADTime(BaseDiffusion, L.LightningModule):
 
             x = x + torch.randn_like(x) * sigma
         return x
-    
-    def get_predictor(self, input_transform, batch_size=32):
-        return PyTorchPredictor(
-            prediction_length=self.prediction_length,
-            input_names=["observed_data"],
-            prediction_net=self,
-            batch_size=batch_size,
-            input_transform=input_transform,
-            # forecast_generator=DistributionForecastGenerator(self.distr_output),
-        )
 
 
 class MADFreq(MADTime):
@@ -311,7 +301,7 @@ class MADFreq(MADTime):
 
     def validation_step(self, batch, batch_idx):
         batch["future_data"] = dft(batch["future_data"])
-        return super().validation_step(batch)
+        return super().validation_step(batch, batch_idx)
 
     def predict_step(self, batch):
         pred = super().predict_step(batch)

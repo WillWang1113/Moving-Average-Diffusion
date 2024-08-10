@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from torch import nn
 import lightning as L
 from gluonts.torch.model.predictor import PyTorchPredictor
-from gluonts.torch.scaler import StdScaler
+from gluonts.torch.scaler import StdScaler, MeanScaler, NOPScaler
 from .backbone import build_backbone
 from .base import BaseDiffusion
 from .conditioner import build_conditioner
@@ -55,7 +55,7 @@ class MADTime(BaseDiffusion, L.LightningModule):
         self.save_hyperparameters()
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        return torch.optim.AdamW(self.parameters(), lr=self.lr)
 
     @torch.no_grad
     def degrade(self, x: torch.Tensor, t: torch.Tensor):
@@ -68,13 +68,36 @@ class MADTime(BaseDiffusion, L.LightningModule):
         x_noisy = x_noisy + self.betas[t].unsqueeze(-1) * torch.randn_like(x_noisy)
         return x_noisy
 
-    def training_step(self, batch, batch_idx):
+    def _revin(self, batch):
         x = batch.pop("future_target")
         batch_size = x.shape[0]
+        # fig, axs = plt.subplots(2)
+        # axs[0].plot(range(batch["past_target"].shape[1]), batch["past_target"][0].flatten().cpu())
+        # axs[0].plot(range(batch["past_target"].shape[1], batch["past_target"].shape[1] + x.shape[1]), x[0].flatten().cpu())
         batch["past_target"], loc, scale = self.scaler(
-            batch["past_target"], weights=torch.ones_like(batch["past_target"])
+            batch["past_target"], torch.ones_like(batch["past_target"])
         )
+        batch["past_target"] = batch["past_target"].unsqueeze(-1)
         x = (x - loc) / scale
+        x = x.unsqueeze(-1)
+        return batch, x, batch_size
+
+    def training_step(self, batch, batch_idx):
+        batch, x, batch_size = self._revin(batch)
+        # x = batch.pop("future_target")
+        # batch_size = x.shape[0]
+        # batch["past_target"], loc, scale = self.scaler(
+        #     batch["past_target"], weights=torch.ones_like(batch["past_target"])
+        # )
+        # x = (x - loc) / scale
+
+        # fig, axs = plt.subplots(2)
+        # axs[0].plot(range(batch["past_target"].shape[1]), batch["past_target"][0].flatten().cpu())
+        # axs[0].plot(range(batch["past_target"].shape[1], batch["past_target"].shape[1] + x.shape[1]), x[0].flatten().cpu())
+        # axs[1].plot(range(batch["past_target"].shape[1]), batch["past_target"][0].flatten().cpu())
+        # axs[1].plot(range(batch["past_target"].shape[1], batch["past_target"].shape[1] + x.shape[1]), x[0].flatten().cpu())
+
+        # fig.savefig('test.png')
         # x = x.unsqueeze(-1)
         loss = self._get_loss(x, batch)
         self.log(
@@ -90,14 +113,8 @@ class MADTime(BaseDiffusion, L.LightningModule):
                 loss += self.alpha * torch.norm(p, p=1)
         return loss
 
-    def validation_step(self, batch):
-        x = batch.pop("future_target")
-        batch_size = x.shape[0]
-        batch["past_target"], loc, scale = self.scaler(
-            batch["past_target"], weights=torch.ones_like(batch["past_target"])
-        )
-        x = (x - loc) / scale
-        # x = x.unsqueeze(-1)
+    def validation_step(self, batch, batch_idx):
+        batch, x, batch_size = self._revin(batch)
         loss = self._get_loss(x, batch)
         self.log(
             "val_loss",
@@ -108,12 +125,17 @@ class MADTime(BaseDiffusion, L.LightningModule):
             batch_size=batch_size,
         )
         return loss
-    
+
     def forward(self, past_target, **kwargs: torch.Any) -> torch.Any:
+        past_target, loc, scale = self.scaler(
+            past_target, torch.ones_like(past_target)
+        )
+        past_target = past_target.unsqueeze(-1)
+
         # assert self._sample_ready
         # x_real = torch.zeros(past_target.shape[0], self.seq_length, past_target.shape[-1]).to(past_target.device)
         # x_real = kwargs.get('future_target', defaults)
-        batch = {'past_target':past_target}
+        batch = {"past_target": past_target}
         target_shape = (past_target.shape[0], self.seq_length, past_target.shape[2])
         # x_real = x_real.unsqueeze(-1)
         x = self._init_noise(condition=batch)
@@ -127,7 +149,7 @@ class MADTime(BaseDiffusion, L.LightningModule):
         else:
             out_x = x * std + mu
             out_x = out_x.reshape(*target_shape)
-        return out_x
+        return out_x[:, :, 0] * scale + loc
 
     def predict_step(self, batch):
         assert self._sample_ready
@@ -202,15 +224,11 @@ class MADTime(BaseDiffusion, L.LightningModule):
         if (condition is not None) and (self.conditioner is not None):
             # ! just for test !
             # ! use latest observed as zero frequency component !
-            device = condition["past_target"].device
+            # device = condition["past_target"].device
             time_value = condition["past_target"][:, [-1], :]
             # target_shape = (time_value.shape[0], self.seq_length, time_value.shape[-1])
-            
-            prev_value = (
-                torch.zeros(*time_value.shape, device=device, dtype=time_value.dtype)
-                if self.norm
-                else time_value
-            )
+
+            prev_value = torch.zeros_like(time_value) if self.norm else time_value
             prev_value = prev_value.expand(-1, self.seq_length, -1)
             noise = prev_value + torch.randn_like(prev_value)
 
@@ -232,13 +250,13 @@ class MADTime(BaseDiffusion, L.LightningModule):
 
     def config_sampling(
         self,
-        # n_sample: int = 1,
+        n_sample: int = 100,
         sigmas: torch.Tensor = None,
         sample_steps=None,
         collect_all=False,
         # flatten_nosie=True,
     ):
-        # self.n_sample = n_sample
+        self.n_sample = n_sample
         self.collect_all = collect_all
         self.sample_Ts = (
             list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
@@ -361,19 +379,88 @@ class MADFreq(MADTime):
         return x_norm, (mean, stdev)
 
     def training_step(self, batch, batch_idx):
-        batch["future_target"] = dft(batch["future_target"])
-        return super().training_step(batch, batch_idx)
+        batch, x, batch_size = self._revin(batch)
+        # fig, axs = plt.subplots(2)
+        # axs[0].plot(range(batch["past_target"].shape[1]), batch["past_target"][0].flatten().cpu())
+        # axs[0].plot(range(batch["past_target"].shape[1], batch["past_target"].shape[1] + x.shape[1]), x[0].flatten().cpu())
+        x = dft(x)
+        # axs[1].plot(range(batch["past_target"].shape[1]), batch["past_target"][0].flatten().cpu())
+        # axs[1].plot(range(batch["past_target"].shape[1], batch["past_target"].shape[1] + x.shape[1]), x[0].flatten().cpu())
+
+        # fig.savefig('test.png')
+        # x = x.unsqueeze(-1)
+        loss = self._get_loss(x, batch)
+        self.log(
+            "train_loss",
+            loss,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            batch_size=batch_size,
+        )
+        for n, p in self.named_parameters():
+            if n.__contains__("backbone") and n.__contains__("net"):
+                loss += self.alpha * torch.norm(p, p=1)
+        return loss
 
     def validation_step(self, batch, batch_idx):
-        batch["future_target"] = dft(batch["future_target"])
-        return super().validation_step(batch)
+        batch, x, batch_size = self._revin(batch)
+        # fig, axs = plt.subplots(3,3)
+        # axs = axs.flatten()
+        # for i in range(len(axs)):
+        #     axs[i].plot(range(batch["past_target"].shape[1]), batch["past_target"][i].flatten().cpu())
+        #     axs[i].plot(range(batch["past_target"].shape[1], batch["past_target"].shape[1] + x.shape[1]), x[i].flatten().cpu())
+        # print(x[0].mean())
+        x = dft(x)
+        # print(x[0,:10,0])
+        # for i in range(len(axs)):
+            # axs[i].plot(range(batch["past_target"].shape[1]), batch["past_target"][i].flatten().cpu())
+            # axs[i].plot(range(batch["past_target"].shape[1], batch["past_target"].shape[1] + x.shape[1]), x[i].flatten().cpu())
 
+        # fig.savefig('test.png')
+        loss = self._get_loss(x, batch)
+        self.log(
+            "val_loss",
+            loss,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+            batch_size=batch_size,
+        )
+        return loss
+    
     def forward(self, past_target, **kwargs: torch.Any) -> torch.Any:
-        pred = super().forward(past_target, **kwargs)
-        pred_idft = idft(pred)
-        return pred_idft
+        batch_size = past_target.shape[0]
+        past_target, loc, scale = self.scaler(
+            past_target, torch.ones_like(past_target)
+        )
+        past_target = past_target.unsqueeze(-1).repeat_interleave(self.n_sample, dim=0)
 
-    def _init_noise(self, x: torch.Tensor=None, condition: Dict[str, torch.Tensor] = None):
+        # assert self._sample_ready
+        # x_real = torch.zeros(past_target.shape[0], self.seq_length, past_target.shape[-1]).to(past_target.device)
+        # x_real = kwargs.get('future_target', defaults)
+        batch = {"past_target": past_target}
+        target_shape = (past_target.shape[0], self.seq_length, past_target.shape[2])
+        # x_real = x_real.unsqueeze(-1)
+        x = self._init_noise(condition=batch)
+        c = self._encode_condition(batch)
+        # x = x.flatten(end_dim=1)
+        x, all_x, mu, std = self._sample_loop(x, c)
+        if self.collect_all:
+            all_x[0] = all_x[0] + mu
+            out_x = torch.stack(all_x, dim=-1)
+            out_x = out_x.reshape(*target_shape, -1)
+        else:
+            out_x = x * std + mu
+            out_x = out_x.reshape(*target_shape)
+        out_x = idft(out_x)[:,:,0].reshape(batch_size, self.n_sample, -1) * scale[:,:,None] + loc[:,:,None]
+        # out_x = out_x.unsqueeze(-1).permute(0, 2, 1)
+        return out_x
+    
+
+    def _init_noise(
+        self, x: torch.Tensor = None, condition: Dict[str, torch.Tensor] = None
+    ):
         noise = super()._init_noise(x, condition)
         out_noise = dft(noise)
         return out_noise

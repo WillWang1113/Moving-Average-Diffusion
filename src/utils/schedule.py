@@ -7,7 +7,7 @@ from src.utils.filters import MovingAvgTime, MovingAvgFreq
 thismodule = sys.modules[__name__]
 
 
-def get_schedule(noise_name, data_name, n_steps, train_dl=None, check_pth=None):
+def get_schedule(noise_name, n_steps, data_name=None,train_dl=None, check_pth=None):
     if noise_name != "std":
         assert noise_name in ["linear", "cosine", "zero", "freqresp"]
         fn = getattr(thismodule, noise_name + "_schedule")
