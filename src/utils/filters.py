@@ -22,22 +22,38 @@ class MovingAvgTime(nn.Module):
     Moving average block to highlight the trend of time series, only for factors kernal size
     """
 
-    def __init__(self, kernel_size, stride=1):
+    def __init__(self, kernel_size, seq_length: int, stride=1):
         super(MovingAvgTime, self).__init__()
         self.kernel_size = kernel_size
-        self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride)
+        self.seq_length = seq_length
+        K = torch.zeros(seq_length, seq_length - kernel_size + 1)
+        start = 0
+        for i in range(K.shape[1]):
+            end = start + kernel_size
+            K[start:end, i] = 1 / kernel_size
+            start += 1
+        K = K.unsqueeze(0)
+        self.K = (
+            torch.nn.functional.interpolate(K, size=seq_length, mode="nearest-exact")
+            .squeeze()
+            .T
+        )
+
+        # self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride)
 
     def forward(self, x: torch.Tensor):
-        orig_size = x.shape[1]
+        assert x.shape[1] == self.seq_length
+        # orig_size = x.shape[1]
 
-        # front = x[:, 0:1, :].repeat(1, self.kernel_size // 2, 1)
-        # end = x[:, -1:, :].repeat(1, self.kernel_size - 1 - self.kernel_size // 2, 1)
-        # x = torch.cat([front, x, end], dim=1)
+        # # front = x[:, 0:1, :].repeat(1, self.kernel_size // 2, 1)
+        # # end = x[:, -1:, :].repeat(1, self.kernel_size - 1 - self.kernel_size // 2, 1)
+        # # x = torch.cat([front, x, end], dim=1)
 
-        x = self.avg(x.permute(0, 2, 1))
-        x = nn.functional.interpolate(x, size=orig_size, mode="nearest-exact")
-        # x = nn.functional.interpolate(x, size=orig_size)
-        x = x.permute(0, 2, 1)
+        # x = self.avg(x.permute(0, 2, 1))
+        # x = nn.functional.interpolate(x, size=orig_size, mode="nearest-exact")
+        # # x = nn.functional.interpolate(x, size=orig_size)
+        # x = x.permute(0, 2, 1)
+        x = self.K.to(x.device) @ x
         return x
 
 

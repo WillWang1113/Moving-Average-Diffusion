@@ -72,7 +72,7 @@ from neuralforecast.losses.numpy import mae, mqloss, mse
 def calculate_metrics(
     y_pred,
     y_real,
-    quantiles,
+    quantiles=(np.arange(9) + 1) / 10,
     # normalize=False
 ):
     # print(y_pred.shape)

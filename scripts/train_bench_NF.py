@@ -10,10 +10,10 @@ from neuralforecast.losses.numpy import mae, mqloss, mse
 from neuralforecast.losses.pytorch import MQLoss
 from neuralforecast.models import (
     NHITS,
+    TiDE,
     # iTransformer,
     # TFT,
-    
-    FEDformer,
+    # FEDformer,
     DLinear,
     PatchTST,
     TimesNet,
@@ -41,9 +41,9 @@ def main(args):
         Y_df, _, _ = LongHorizon.load(directory=args["data_dir"], group=args["dataset"])
     else:
         Y_df = pd.read_csv(os.path.join(args["data_dir"], args["dataset"] + ".csv"))
-        
+
     Y_df["ds"] = pd.to_datetime(Y_df["ds"])
-    if args["task"] == "U":
+    if args["task"] == "S":
         Y_df = Y_df[Y_df["unique_id"] == "OT"]
 
     n_series = len(Y_df.groupby("unique_id"))
@@ -65,19 +65,20 @@ def main(args):
     # print(LongHorizonInfo[args["dataset"]].test_size, LongHorizonInfo[args["dataset"]].val_size)
     # return 0
     # quantiles = [0.025 * (1 + i) for i in range(39)]
-    level = [i for i in range(10, 100, 10)]
-    quantiles = [0.05 * (1 + i) for i in range(19)]
+    # level = [i for i in range(10, 100, 10)]
+    quantiles = [0.1 * (1 + i) for i in range(9)]
+    # quantiles = [0.05 * (1 + i) for i in range(19)]
     seq_len = args["seq_len"]
     pred_len = args["pred_len"]
     config = {
         "h": pred_len,
         "input_size": seq_len,
-        "max_steps": 100,
-        "loss": MQLoss(level=level),
-        "early_stop_patience_steps": 5,
+        "max_steps": 10,
+        "loss": MQLoss(quantiles=quantiles),
+        "early_stop_patience_steps": 3,
         "val_check_steps": 1,
         "inference_windows_batch_size": 1024,
-        "windows_batch_size": 128,
+        "windows_batch_size": 16,
         "scaler_type": "standard",
         "fast_dev_run": args["fast_dev_run"],
         "num_sanity_val_steps": 0,
@@ -89,16 +90,19 @@ def main(args):
     models = [
         # TSMixer(**config, n_series=n_series, loss=MQLoss(level=level)),
         PatchTST(
-            hidden_size=256,
+            hidden_size=512,
+            encoder_layers=2,
+            n_heads=8,
             dropout=0.1,
-            head_dropout=0.1,
             fc_dropout=0.1,
+            head_dropout=0.1,
+            attn_dropout=0.1,
             **config,
         ),
-        TimesNet(**config),
+        # TimesNet(**config),
         DLinear(**config),
-        NHITS(**config),
-        FEDformer(**config),
+        # NHITS(**config),
+        # TiDE(**config),
         # FEDformer(**config, loss=MQLoss(level=level)),
         # DeepAR(
         #     **config,
@@ -147,7 +151,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", required=True, type=str)
     parser.add_argument("--save_dir", required=True, type=str)
     parser.add_argument("--num_train", default=5, type=int)
-    parser.add_argument("--task", default="U", type=str, choices=["M", "U"])
+    parser.add_argument("--task", default="S", type=str, choices=["M", "S"])
     parser.add_argument("--seq_len", default=96, type=int)
     parser.add_argument("--pred_len", default=96, type=int)
     parser.add_argument("--dataset", default="ETTh1", type=str)

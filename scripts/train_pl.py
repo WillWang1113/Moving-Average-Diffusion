@@ -73,15 +73,12 @@ def prepare_train(model_config, data_config, args, n):
         if df_.__contains__("MAD")
         else model_config["diff_config"]["T"]
     )
-    noise_schedule = get_schedule(
-        ns_name, args["data_config"], n_steps, train_dl, check_pth=data_folder
-    )
+    noise_schedule = get_schedule(ns_name, n_steps, data_name=args['data_config'], train_dl=train_dl, check_pth=data_folder)
     return model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl
 
 
 def main(args, n):
     device = f"cuda:{args['gpu']}" if torch.cuda.is_available() else "cpu"
-    print("Using: ", device)
 
     data_config = yaml.safe_load(
         open(f'configs/dataset/{args["data_config"]}.yaml', "r")
@@ -94,8 +91,8 @@ def main(args, n):
     )
     model_config = exp_parser(model_config, args)
 
-    model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl = prepare_train(
-        model_config, data_config, args, n
+    model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl = (
+        prepare_train(model_config, data_config, args, n)
     )
     # ! MUST SETUP SEED AFTER prepare_train
     # setup_seed(n)
@@ -114,11 +111,7 @@ def main(args, n):
         mode="min",
         patience=model_config["train_config"]["early_stop"],
     )
-    mc = ModelCheckpoint(
-        monitor="val_loss",
-        dirpath=save_folder,
-        save_top_k=1
-    )
+    mc = ModelCheckpoint(monitor="val_loss", dirpath=save_folder, save_top_k=1)
     # return 0
     # TODO:
     trainer = Trainer(
@@ -136,13 +129,13 @@ def main(args, n):
     #     break
     # return 0
 
-    torch.save(mc.best_model_path, os.path.join(save_folder, f'best_model_path_{n}.pt'))
+    torch.save(mc.best_model_path, os.path.join(save_folder, f"best_model_path_{n}.pt"))
     # diff = df.load_from_checkpoint(checkpoint_path=mc.best_model_path)
     # diff.config_sampling()
     # pred = trainer.predict(diff, test_dl)
     # pred = torch.concat(pred)
     # print(pred.shape)
-    
+
     print(mc.best_model_path)
 
 
@@ -166,13 +159,13 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--num_train", type=int, default=5)
 
-    # Define overrides on models
-    parser.add_argument("--diff_config.name", type=str)
-    parser.add_argument("--diff_config.norm", action="store_true", default=None)
-    parser.add_argument("--diff_config.pred_diff", action="store_true", default=None)
-    parser.add_argument("--diff_config.noise_schedule", type=str)
-    parser.add_argument("--bb_config.name", type=str)
-    parser.add_argument("--bb_config.hidden_size", type=int)
+    # # Define overrides on models
+    # parser.add_argument("--diff_config.name", type=str)
+    # parser.add_argument("--diff_config.norm", action="store_true", default=None)
+    # parser.add_argument("--diff_config.pred_diff", action="store_true", default=None)
+    # parser.add_argument("--diff_config.noise_schedule", type=str)
+    # parser.add_argument("--bb_config.name", type=str)
+    # parser.add_argument("--bb_config.hidden_size", type=int)
 
     # Define overrides on dataset
     parser.add_argument("--pred_len", type=int)

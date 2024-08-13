@@ -3,14 +3,14 @@
 export CUDA_VISIBLE_DEVICES=0
 
 # NIPS DATASETS
-# pred_len=(96)
-pred_len=(96 192 336 720)
+pred_len=(96)
+# pred_len=(96 192 336 720)
 data_pth=(
   # "ETTh1"
   # "ETTh2"
   # "ETTm1"
   # "ETTm2"
-  # "ECL"
+  "ECL"
   # "Weather"
   "TrafficL"
   # "Exchange"
@@ -20,12 +20,12 @@ for i in "${pred_len[@]}"; do
   for j in "${data_pth[@]}"; do
     echo $j $i
     python -u scripts/train_bench_NF.py \
-      --task M \
+      --task S \
       --data_dir /home/user/data/NF_longterm \
-      --save_dir /mnt/ExtraDisk/wcx/research/benchmarks \
+      --save_dir /home/user/data/NF_benchmark \
       --dataset $j \
       --seq_len 96 \
-      --pred_len $i --fast_dev_run
+      --pred_len $i
   done
 done
 

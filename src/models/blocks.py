@@ -4,19 +4,17 @@ from typing import Callable, List, Optional
 
 
 class ResBlk(nn.Module):
-
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv1d(in_channels,
-                      out_channels,
-                      kernel_size=3,
-                      padding=1), nn.BatchNorm1d(out_channels), nn.LeakyReLU())
+            nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm1d(out_channels),
+            nn.LeakyReLU(),
+        )
         self.conv2 = nn.Sequential(
-            nn.Conv1d(out_channels,
-                      out_channels,
-                      kernel_size=3,
-                      padding=1), nn.BatchNorm1d(out_channels))
+            nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm1d(out_channels),
+        )
         self.relu = nn.LeakyReLU()
         self.out_channels = out_channels
         if in_channels != out_channels:
@@ -33,12 +31,23 @@ class ResBlk(nn.Module):
         return out
 
 
-class ComplexRELU(nn.Module):
+class CRELU(nn.Module):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
     def forward(self, x):
         return torch.relu(x.real) + 1.0j * torch.relu(x.imag)
+
+
+class CSoftshrink(nn.Module):
+    def __init__(self, lambd=0.05, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.lambd = lambd
+
+    def forward(self, x):
+        return torch.nn.functional.softshrink(
+            x.real, self.lambd
+        ) + 1.0j * torch.nn.functional.softshrink(x.imag, self.lambd)
 
 
 class CMLP(nn.Sequential):
@@ -47,7 +56,7 @@ class CMLP(nn.Sequential):
         in_channels: int,
         hidden_channels: List[int],
         norm_layer: Optional[Callable[..., torch.nn.Module]] = None,
-        activation_layer: Optional[Callable[..., torch.nn.Module]] = ComplexRELU,
+        activation_layer: Optional[Callable[..., torch.nn.Module]] = CRELU,
         inplace: Optional[bool] = None,
         bias: bool = True,
         dropout: float = 0.0,
@@ -59,18 +68,21 @@ class CMLP(nn.Sequential):
         layers = []
         in_dim = in_channels
         for hidden_dim in hidden_channels[:-1]:
-            layers.append(torch.nn.Linear(in_dim, hidden_dim, bias=bias).to(torch.cfloat))
+            layers.append(
+                torch.nn.Linear(in_dim, hidden_dim, bias=bias).to(torch.cfloat)
+            )
             if norm_layer is not None:
                 layers.append(norm_layer(hidden_dim))
             layers.append(activation_layer(**params))
             # layers.append(torch.nn.Dropout(dropout, **params))
             in_dim = hidden_dim
 
-        layers.append(torch.nn.Linear(in_dim, hidden_channels[-1], bias=bias).to(torch.cfloat))
+        layers.append(
+            torch.nn.Linear(in_dim, hidden_channels[-1], bias=bias).to(torch.cfloat)
+        )
         # layers.append(torch.nn.Dropout(dropout, **params))
 
         super().__init__(*layers)
-
 
 
 class ResidualBlock(nn.Module):
@@ -323,13 +335,13 @@ class RevIN(nn.Module):
         if self.affine:
             self._init_params()
 
-    def forward(self, x, mode:str):
-        if mode == 'norm':
+    def forward(self, x, mode: str):
+        if mode == "norm":
             self._get_statistics(x)
             x = self._normalize(x)
-        elif mode == 'denorm':
+        elif mode == "denorm":
             x = self._denormalize(x)
-        else: 
+        else:
             raise NotImplementedError
         return x
 
@@ -339,9 +351,11 @@ class RevIN(nn.Module):
         self.affine_bias = nn.Parameter(torch.zeros(self.num_features))
 
     def _get_statistics(self, x):
-        dim2reduce = tuple(range(1, x.ndim-1))
+        dim2reduce = tuple(range(1, x.ndim - 1))
         self.mean = torch.mean(x, dim=dim2reduce, keepdim=True).detach()
-        self.stdev = torch.sqrt(torch.var(x, dim=dim2reduce, keepdim=True, unbiased=False) + self.eps).detach()
+        self.stdev = torch.sqrt(
+            torch.var(x, dim=dim2reduce, keepdim=True, unbiased=False) + self.eps
+        ).detach()
 
     def _normalize(self, x):
         x = x - self.mean
@@ -354,7 +368,7 @@ class RevIN(nn.Module):
     def _denormalize(self, x):
         if self.affine:
             x = x - self.affine_bias
-            x = x / (self.affine_weight + self.eps*self.eps)
+            x = x / (self.affine_weight + self.eps * self.eps)
         x = x * self.stdev
         x = x + self.mean
         return x

@@ -103,7 +103,7 @@ def std_schedule(data_name, train_dl, check_pth):
             )
             step_ratios = []
             for j in range(2, seq_length + 1):
-                mat = MovingAvgTime(j)
+                mat = MovingAvgTime(j, seq_length=seq_length)
                 x_avg = mat(x)
                 std_avg = torch.sqrt(
                     torch.var(x_avg, dim=1, keepdim=True, unbiased=False) + 1e-5
@@ -130,16 +130,16 @@ def freqresp_schedule(n_steps):
     fr = 1 - (fr.conj() * fr).real
     fr = torch.sqrt(fr + 1e-6)
     fr[:, 0] = torch.ones_like(fr[:, 0]) * 1e-5
-    fr_im = fr.clone()
-    fr_im = fr_im[:, 1:]
-    if seq_len % 2 == 0:
-        fr_im = fr_im[:, :-1]
-    fr_cat = torch.cat([fr, fr_im], dim=1)  # [steps, seq_len]
-    assert fr_cat.shape[0] == n_steps
-    assert fr_cat.shape[1] == seq_len
+    # fr_im = fr.clone()
+    # fr_im = fr_im[:, 1:]
+    # if seq_len % 2 == 0:
+    #     fr_im = fr_im[:, :-1]
+    # fr_cat = torch.cat([fr, fr_im], dim=1)  # [steps, seq_len]
+    # assert fr_cat.shape[0] == n_steps
+    # assert fr_cat.shape[1] == seq_len
     return {
         "alpha_bars": None,
         "betas_bars": None,
         "alphas": None,
-        "betas": fr_cat.float(),
+        "betas": fr.float(),
     }

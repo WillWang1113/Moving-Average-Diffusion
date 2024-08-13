@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import weight_norm
 import math
+from typing import Callable, List, Optional, Tuple, Union
 
 
 class PositionalEmbedding(nn.Module):
@@ -163,6 +164,7 @@ class DataEmbedding_wo_pos(nn.Module):
 
 
 class PatchEmbedding(nn.Module):
+    # PatchTST
     def __init__(self, d_model, patch_len, stride, padding, dropout):
         super(PatchEmbedding, self).__init__()
         # Patching
@@ -188,3 +190,32 @@ class PatchEmbedding(nn.Module):
         # Input encoding
         x = self.value_embedding(x) + self.position_embedding(x)
         return self.dropout(x), n_vars
+    
+
+class PatchEmbed(nn.Module):
+    # DiT
+    def __init__(self, input_size, patch_size, in_channels, hidden_size, bias=True, stride=None, norm_layer: Optional[Callable] = None,):
+        super(PatchEmbed, self).__init__()
+        # Patching
+        self.patch_size = patch_size
+        self.stride = patch_size if stride is None else stride
+        self.num_patches = input_size//patch_size
+        self.proj = nn.Conv1d(in_channels, hidden_size, kernel_size=self.patch_size, stride=self.stride, bias=bias)
+        self.norm = norm_layer(hidden_size) if norm_layer else nn.Identity()
+        # self.padding_patch_layer = nn.ReplicationPad1d((0, padding))
+
+        # Backbone, Input encoding: projection of feature vectors onto a d-dim vector space
+        # self.value_embedding = nn.Linear(patch_len, d_model, bias=False)
+
+        # Positional embedding
+        # self.position_embedding = PositionalEmbedding(d_model)
+
+        # Residual dropout
+        # self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        
+        # do patching
+        x = self.proj(x.permute(0,2,1))
+        x = self.norm(x)
+        return x.permute(0,2,1)

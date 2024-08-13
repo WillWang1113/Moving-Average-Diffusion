@@ -18,6 +18,20 @@ from ..utils.fourier import (
 )
 
 
+def complex_mse_loss(output, target):
+    output_time = torch.fft.irfft(output, dim=1, norm="ortho")
+    target_time = torch.fft.irfft(target, dim=1, norm="ortho")
+    # output_re_im = torch.stack([output.real, output.imag])
+    # target_re_im = torch.stack([target.real, target.imag])
+    return torch.nn.functional.mse_loss(output_time, target_time)
+
+
+# def complex_mse_loss(output, target):
+#     output_re_im = torch.stack([output.real, output.imag])
+#     target_re_im = torch.stack([target.real, target.imag])
+#     return torch.nn.functional.mse_loss(output_re_im, target_re_im)
+
+
 class MADTime(BaseDiffusion, L.LightningModule):
     """MovingAvgDiffusionTime."""
 
@@ -43,39 +57,56 @@ class MADTime(BaseDiffusion, L.LightningModule):
         # config diffusion steps
         self.factors = [i for i in range(2, self.seq_length + 1)]
         self.T = len(self.factors)
-        self.degrade_fn = [MovingAvgTime(f) for f in self.factors]
+        self.degrade_fn = [MovingAvgTime(f, self.seq_length) for f in self.factors]
+        K = torch.stack([df.K for df in self.degrade_fn])
+        self.register_buffer("K", K)
         # ns = noise_kw.pop("name")
         # noise_schedule = getattr(schedule, ns + "_schedule")(n_steps=self.T, **noise_kw)
         self.register_buffer("betas", noise_schedule["betas"].reshape(self.T, -1))
         assert len(self.betas) == self.T
         self.lr = lr
         self.alpha = alpha
+        self.loss_fn = torch.nn.functional.mse_loss
         self.save_hyperparameters()
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.alpha)
 
     @torch.no_grad
     def degrade(self, x: torch.Tensor, t: torch.Tensor):
         # loop for each sample to temporal average
-        x_noisy = []
-        for i in range(x.shape[0]):
-            x_n = self.degrade_fn[t[i]](x[[i], ...])
-            x_noisy.append(x_n)
-        x_noisy = torch.concat(x_noisy)
-        x_noisy = x_noisy + self.betas[t].unsqueeze(-1) * torch.randn_like(x_noisy)
+        # matrix multiplication
+        # print(self.K[t].shape)
+        x_filtered = self.K[t] @ x
+        # print(x_filtered.shape)
+
+        # add noise
+        x_noisy = x_filtered + self.betas[t].unsqueeze(-1) * torch.randn_like(
+            x_filtered
+        )
+        # print(x_filtered.shape)
+        
+
         return x_noisy
+        # # loop for each sample to temporal average
+        # x_noisy = []
+        # for i in range(x.shape[0]):
+        #     x_n = self.degrade_fn[t[i]](x[[i], ...])
+        #     x_noisy.append(x_n)
+        # x_noisy = torch.concat(x_noisy)
+        # x_noisy = x_noisy + self.betas[t].unsqueeze(-1) * torch.randn_like(x_noisy)
+        # return x_noisy
 
     def training_step(self, batch, batch_idx):
         x = batch.pop("future_data")
         loss = self._get_loss(x, batch)
         self.log("train_loss", loss, on_epoch=True, prog_bar=True, logger=True)
-        for n, p in self.named_parameters():
-            if n.__contains__('backbone') and n.__contains__('net'):
-                loss += self.alpha * torch.norm(p, p=1)
+        # for n, p in self.named_parameters():
+        #     if n.__contains__('backbone'):
+        #         loss += self.alpha * torch.norm(p, p=1)
         return loss
 
-    def validation_step(self, batch):
+    def validation_step(self, batch, batch_idx):
         x = batch.pop("future_data")
         loss = self._get_loss(x, batch)
         self.log("val_loss", loss, on_epoch=True, prog_bar=True, logger=True)
@@ -86,19 +117,37 @@ class MADTime(BaseDiffusion, L.LightningModule):
         x_real = batch.pop("future_data")
         x = self._init_noise(x_real, batch)
         c = self._encode_condition(batch)
-        # x = x.flatten(end_dim=1)
+        x = x.flatten(end_dim=1)
         x, all_x, mu, std = self._sample_loop(x, c)
         if self.collect_all:
             all_x[0] = all_x[0] + mu
             out_x = torch.stack(all_x, dim=-1)
-            out_x = out_x.reshape(*x_real.shape, -1)
+            out_x = out_x.reshape(
+                self.n_sample,
+                x_real.shape[0],
+                x.shape[1],
+                # self.seq_length // 2 + 1,
+                x_real.shape[2],
+                -1,
+            )
+            # out_x = out_x.reshape(self.n_sample, *x_real.shape, -1)
         else:
             out_x = x * std + mu
-            out_x = out_x.reshape(*x_real.shape)
+            out_x = out_x.reshape(
+                self.n_sample,
+                x_real.shape[0],
+                x.shape[1],
+                # self.seq_length // 2 + 1,
+                x_real.shape[2],
+            )
+            # out_x = out_x.reshape(self.n_sample, *x_real.shape)
         return out_x
-    
 
     def _sample_loop(self, x: torch.Tensor, c: torch.Tensor):
+        if c.shape[0] != x.shape[0]:
+            c = c.repeat(
+                x.shape[0] // c.shape[0], *[1 for _ in range(len(c.shape) - 1)]
+            )
 
         all_x = [x]
         for i in range(len(self.sample_Ts)):
@@ -141,7 +190,7 @@ class MADTime(BaseDiffusion, L.LightningModule):
             x_hat = x_hat + x_noisy
 
         # fit on original scale
-        loss = nn.functional.mse_loss(x_hat, x)
+        loss = self.loss_fn(x_hat, x)
         return loss
 
     def _init_noise(
@@ -149,6 +198,32 @@ class MADTime(BaseDiffusion, L.LightningModule):
         x: torch.Tensor,
         condition: Dict[str, torch.Tensor] = None,
     ):
+        # SINGLE
+        # # * INIT ON TIME DOMAIN AND DO TRANSFORM
+        # # TODO: condition on basic predicion f(x)
+        # if (condition is not None) and (self.conditioner is not None):
+        #     # ! just for test !
+        #     # ! use latest observed as zero frequency component !
+        #     device = condition["observed_data"].device
+        #     time_value = condition["observed_data"][:, [-1], :]
+        #     prev_value = (
+        #         torch.zeros(*time_value.shape, device=device, dtype=time_value.dtype)
+        #         if self.norm
+        #         else time_value
+        #     )
+        #     prev_value = prev_value.expand(-1, x.shape[1], -1)
+
+        #     noise = prev_value + torch.randn_like(prev_value)
+
+        # else:
+        #     # condition on given target
+        #     noise = self.degrade(
+        #         x,
+        #         torch.ones((x.shape[0],), device=x.device, dtype=torch.int)
+        #         * (self.T - 1),
+        #     )
+        # return noise
+
         # * INIT ON TIME DOMAIN AND DO TRANSFORM
         # TODO: condition on basic predicion f(x)
         if (condition is not None) and (self.conditioner is not None):
@@ -163,7 +238,12 @@ class MADTime(BaseDiffusion, L.LightningModule):
             )
             prev_value = prev_value.expand(-1, x.shape[1], -1)
 
-            noise = prev_value + torch.randn_like(prev_value)
+            noise = prev_value + torch.randn(
+                self.n_sample,
+                *prev_value.shape,
+                device=device,
+                dtype=prev_value.dtype,
+            )
 
         else:
             # condition on given target
@@ -183,13 +263,13 @@ class MADTime(BaseDiffusion, L.LightningModule):
 
     def config_sampling(
         self,
-        # n_sample: int = 1,
+        n_sample: int = 1,
         sigmas: torch.Tensor = None,
         sample_steps=None,
         collect_all=False,
         # flatten_nosie=True,
     ):
-        # self.n_sample = n_sample
+        self.n_sample = n_sample
         self.collect_all = collect_all
         self.sample_Ts = (
             list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
@@ -245,7 +325,13 @@ class MADFreq(MADTime):
         alpha=1e-3,
     ) -> None:
         super().__init__(
-            backbone_config, conditioner_config, noise_schedule, norm, pred_diff, lr, alpha
+            backbone_config,
+            conditioner_config,
+            noise_schedule,
+            norm,
+            pred_diff,
+            lr,
+            alpha,
         )
         self.degrade_fn = [
             MovingAvgFreq(f, seq_length=self.seq_length) for f in self.factors
@@ -253,63 +339,100 @@ class MADFreq(MADTime):
         freq_response = torch.concat([df.Hw for df in self.degrade_fn])
         self.register_buffer("freq_response", freq_response)
         # self.betas = self.betas
+        self.loss_fn = complex_mse_loss
 
+    # torch.fft.rfft version
     @torch.no_grad
     def degrade(self, x: torch.Tensor, t: torch.Tensor):
-        # print('degrade')
-        # print(x.shape)
-        x_complex = real_imag_to_complex_freq(x)
-        # print(x_complex.shape)
-        # x_complex = dft(x, real_imag=False)
-        # # real+imag --> complex tensor
-
         # matrix multiplication
-        x_filtered = x_complex * self.freq_response[t]
+        x_filtered = x * self.freq_response[t]
         # print(x_filtered.shape)
 
         # IF REAL and IMAG, noise schedule will be different
-        if self.betas.shape[1] > x_filtered.shape[1]:
-            beta = self.betas[..., : x_filtered.shape[1]]
-        else:
-            beta = self.betas
+        # if self.betas.shape[1] > x_filtered.shape[1]:
+        #     beta = self.betas[..., : x_filtered.shape[1]]
+        # else:
+        #     beta = self.betas
 
         # add noise
-        x_filtered = x_filtered + beta[t].unsqueeze(-1) * torch.randn_like(x_filtered)
+        x_noisy = x_filtered + self.betas[t].unsqueeze(-1) * torch.randn_like(
+            x_filtered
+        )
         # print(x_filtered.shape)
 
         # complex tensor --> real+imag
-        x_noisy = complex_freq_to_real_imag(x_filtered, seq_len=x.shape[1])
+        # x_noisy = complex_freq_to_real_imag(x_noisy, seq_len=x.shape[1])
         # print(x_noisy.shape)
         return x_noisy
 
+    # ORIGINAL
+    # @torch.no_grad
+    # def degrade(self, x: torch.Tensor, t: torch.Tensor):
+    #     # print('degrade')
+    #     # print(x.shape)
+    #     x_complex = real_imag_to_complex_freq(x)
+    #     # print(x_complex.shape)
+    #     # x_complex = dft(x, real_imag=False)
+    #     # # real+imag --> complex tensor
+
+    #     # matrix multiplication
+    #     x_filtered = x_complex * self.freq_response[t]
+    #     # print(x_filtered.shape)
+
+    #     # IF REAL and IMAG, noise schedule will be different
+    #     if self.betas.shape[1] > x_filtered.shape[1]:
+    #         beta = self.betas[..., : x_filtered.shape[1]]
+    #     else:
+    #         beta = self.betas
+
+    #     # add noise
+    #     x_filtered = x_filtered + beta[t].unsqueeze(-1) * torch.randn_like(x_filtered)
+    #     # print(x_filtered.shape)
+
+    #     # complex tensor --> real+imag
+    #     x_noisy = complex_freq_to_real_imag(x_filtered, seq_len=x.shape[1])
+    #     # print(x_noisy.shape)
+    #     return x_noisy
+
     def _normalize(self, x, t=None):
+        # x_time = torch.fft.ifft(x, dim=1, norm="ortho")
+        # x_norm, (time_mean, stdev) = super()._normalize(x_time, t)
+        # x_norm = torch.fft.fft(x_norm, dim=1, norm="ortho")
+        # mean = torch.zeros_like(x_norm)
+        # mean[:, [0], :] = time_mean[:, [0], :] * (self.seq_length ** 0.5)
+        # print(mean.shape)
+        # print(stdev.shape)
         x_ = self.degrade_fn[t](x) if t is not None else x
         mean = torch.zeros_like(x_)
         mean[:, [0], :] = x_[:, [0], :]
         var = (
             torch.sum(torch.abs(x_[:, 1:, :]) ** 2, dim=1, keepdim=True)
             * 2
-            / x.shape[1]
+            / self.seq_length
         )
         stdev = torch.sqrt(var + 1e-6)
         x_norm = (x_ - mean) / stdev
         return x_norm, (mean, stdev)
 
     def training_step(self, batch, batch_idx):
-        batch["future_data"] = dft(batch["future_data"])
+        batch["future_data"] = torch.fft.rfft(batch["future_data"], dim=1, norm="ortho")
+        # batch["future_data"] = dft(batch["future_data"])
         return super().training_step(batch, batch_idx)
 
     def validation_step(self, batch, batch_idx):
-        batch["future_data"] = dft(batch["future_data"])
+        batch["future_data"] = torch.fft.rfft(batch["future_data"], dim=1, norm="ortho")
+        # batch["future_data"] = dft(batch["future_data"])
         return super().validation_step(batch, batch_idx)
 
     def predict_step(self, batch):
         pred = super().predict_step(batch)
-        # final_shape = pred.shape
-        pred_idft = idft(pred)
+        final_shape = pred.shape
+        pred_idft = torch.fft.irfft(pred, dim=2, norm="ortho")
+        # pred_idft = idft(pred.flatten(end_dim=1)).reshape(final_shape)
         return pred_idft
 
     def _init_noise(self, x: torch.Tensor, condition: Dict[str, torch.Tensor] = None):
         noise = super()._init_noise(x, condition)
-        out_noise = dft(noise)
+        # out_noise = dft(noise)
+        out_noise = torch.fft.rfft(noise, dim=2, norm="ortho")
         return out_noise

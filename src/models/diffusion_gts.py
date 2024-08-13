@@ -55,7 +55,7 @@ class MADTime(BaseDiffusion, L.LightningModule):
         self.save_hyperparameters()
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.lr)
+        return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.0)
 
     @torch.no_grad
     def degrade(self, x: torch.Tensor, t: torch.Tensor):

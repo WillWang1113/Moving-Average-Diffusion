@@ -7,7 +7,7 @@ import logging
 from tqdm import tqdm
 from gluonts.torch.model.predictor import PyTorchPredictor
 from src.utils.filters import get_factors
-from src.models.diffusion_pl import MADFreq
+from src.models.diffusion_pl import MADFreq, MADTime
 from lightning import Trainer
 from lightning.fabric import seed_everything
 from src.utils.sample import plot_fcst, temporal_avg
@@ -16,7 +16,7 @@ from src.utils.metrics import calculate_metrics
 logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
 
 def main(args):
-    quantiles = [0.05 * (1 + i) for i in range(19)]
+    # quantiles = [0.05 * (1 + i) for i in range(19)]
     root_path = os.path.join(
         args.save_dir, f"{args.dataset}_{args.pred_len}_{args.task}"
     )
@@ -56,7 +56,10 @@ def main(args):
         read_d = os.path.join(exp_path, f"best_model_path_{i}.pt")
 
         best_model_path = torch.load(read_d)
-        diff = MADFreq.load_from_checkpoint(best_model_path)
+        if args.kind =='freq':
+            diff = MADFreq.load_from_checkpoint(best_model_path)
+        else:
+            diff = MADTime.load_from_checkpoint(best_model_path)
         # diff = diff.load
 
         # diff = torch.load(read_d)
@@ -66,13 +69,15 @@ def main(args):
         else:
             sigmas = torch.linspace(0.2, 0.1, len(diff.betas))
 
-        diff.config_sampling(sigmas, sample_steps, args.collect_all)
-        y_pred, y_real = [], []
-        for _ in tqdm(range(args.n_sample)):
-            y_p = trainer.predict(diff, test_dl)
-            y_p = torch.concat(y_p)
-            y_pred.append(y_p)
-        y_pred = torch.stack(y_pred)
+        diff.config_sampling(args.n_sample, sigmas, sample_steps, args.collect_all)
+        y_real = []
+        y_pred = trainer.predict(diff, test_dl)
+        y_pred = torch.concat(y_pred, dim=1)
+        # for _ in tqdm(range(args.n_sample)):
+        #     y_p = trainer.predict(diff, test_dl)
+        #     y_p = torch.concat(y_p)
+        #     y_pred.append(y_p)
+        # y_pred = torch.stack(y_pred)
         for b in test_dl:
             y_real.append(b['future_data'])
         y_real = torch.concat(y_real)
@@ -81,7 +86,7 @@ def main(args):
         else:
             y_pred = y_pred.cpu().numpy()
             y_real = y_real.cpu().numpy()
-        m, y_pred_q, y_pred_point = calculate_metrics(y_pred, y_real, quantiles)
+        m, y_pred_q, y_pred_point = calculate_metrics(y_pred, y_real)
         print(m)
         avg_m.append(m)
         if i in [0, "t"]:
@@ -108,12 +113,12 @@ def main(args):
     print(df)
     # df["method"] = d.split("/")[-1]
     df["granularity"] = kernel_size if args.collect_all else 1
-    # df.to_csv(
-    #     os.path.join(
-    #         exp_path,
-    #         f"{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}.csv",
-    #     )
-    # )
+    df.to_csv(
+        os.path.join(
+            exp_path,
+            f"{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}.csv",
+        )
+    )
 
 
 if __name__ == "__main__":

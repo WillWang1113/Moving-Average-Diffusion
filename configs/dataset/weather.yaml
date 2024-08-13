@@ -3,7 +3,7 @@ root_path: /home/user/data/THU-timeseries
 # root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
 data_path: weather/weather.csv
 features: S
-target: OT
+target: T (degC)
 num_workers: 1
 seq_len: 96
 pred_len: 96

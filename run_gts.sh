@@ -19,8 +19,8 @@ seq_len=96
 pred_len=(96)
 # pred_len=(96 192 336 720)
 DATASETS=(
-  'electricity_nips'
-  # 'traffic_nips'
+  # 'electricity_nips'
+  'traffic_nips'
   # 'solar_nips'
   # 'exchange_rate_nips'
   # 'wiki2000_nips'
