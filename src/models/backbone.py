@@ -2,10 +2,12 @@ from fcntl import DN_RENAME
 import sys
 import torch
 from typing import List, Union, Tuple
-from torch import nn
+from torch import is_complex, nn
 from torchvision.ops import MLP
 import numpy as np
 import math
+
+from src.layers.Autoformer_EncDec import series_decomp
 from ..layers.MLP import Mlp
 from ..layers.SelfAttention_Family import Attention
 from ..layers.Embed import PatchEmbed
@@ -90,7 +92,7 @@ class RMLPBackbone(nn.Module):
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         fft_shape = x.shape[1]
-        x_real_imag = torch.concat([x.real, x.imag[:,1:-1,:]], dim=1)
+        x_real_imag = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
         x = self.embedder(x_real_imag.flatten(1))
         t = self.pe(t)
         c = self.con_linear(condition)
@@ -103,13 +105,103 @@ class RMLPBackbone(nn.Module):
         # x = x + c
         x = self.unembedder(x).reshape((-1, (self.seq_length), self.seq_channels))
         # x = torch.nn.functional.softshrink(x)
-        x_re = x[:,:fft_shape, :]
-        x_im = torch.concat([torch.zeros_like(x[:,[0],:]), x[:,fft_shape:, :], torch.zeros_like(x[:,[0],:])], dim=1)
+        x_re = x[:, :fft_shape, :]
+        x_im = torch.concat(
+            [
+                torch.zeros_like(x[:, [0], :]),
+                x[:, fft_shape:, :],
+                torch.zeros_like(x[:, [0], :]),
+            ],
+            dim=1,
+        )
         x = torch.stack([x_re, x_im], dim=-1)
         return torch.view_as_complex(x)
 
 
-class MLPBackbone(nn.Module):
+class RMLPStatsBackbone(nn.Module):
+    """
+    ## MLP backbone
+    """
+
+    def __init__(
+        self,
+        seq_channels: int,
+        seq_length: int,
+        d_model: int,
+        d_mlp: int,
+        # hidden_size: int,
+        latent_dim: int,
+        n_layers: int = 3,
+        # norm: bool = False,
+        dropout: float = 0.1,
+        **kwargs,
+    ) -> None:
+        """
+        * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
+        * `seq_length` is the number of timesteps in the time series.
+        * `hidden_size` is the hidden size
+        * `n_layers` is the number of MLP
+        """
+        super().__init__()
+
+        self.embedder = nn.Linear(seq_channels * (seq_length), d_model)
+        self.unembedder = nn.Linear(d_model, seq_channels * (seq_length))
+        self.pe = SinusoidalPosEmb(d_model)
+        # self.pe = GaussianFourierProjection(d_model)
+        self.net = nn.ModuleList(  # type: ignore
+            [
+                MLP(
+                    in_channels=d_model,
+                    hidden_channels=[d_mlp, d_model],
+                    dropout=dropout,
+                )
+                for _ in range(n_layers)
+            ]
+        )
+        self.seq_channels = seq_channels
+        self.seq_length = seq_length
+        if d_model != latent_dim:
+            self.con_linear = nn.Linear(latent_dim, d_model)
+        else:
+            self.con_linear = nn.Identity()
+
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+        c, mean_pred, std_pred = condition
+        fft_shape = x.shape[1]
+        x_real_imag = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
+        x = self.embedder(x_real_imag.flatten(1))
+        t = self.pe(t)
+        c = self.con_linear(c)
+        x = x + t + c
+        # x = self.pe(x, t, use_time_axis=False) + c
+        for layer in self.net:
+            x = x + layer(x)
+
+            # x = x + t + c
+        # x = x + c
+        x = self.unembedder(x).reshape((-1, (self.seq_length), self.seq_channels))
+        x = x * std_pred + torch.concat(
+            [
+                mean_pred,
+                torch.zeros_like(x[:, 1:, :]),
+            ],
+            dim=1,
+        )
+        # x = torch.nn.functional.softshrink(x)
+        x_re = x[:, :fft_shape, :]
+        x_im = torch.concat(
+            [
+                torch.zeros_like(x[:, [0], :]),
+                x[:, fft_shape:, :],
+                torch.zeros_like(x[:, [0], :]),
+            ],
+            dim=1,
+        )
+        x = torch.stack([x_re, x_im], dim=-1)
+        return torch.view_as_complex(x)
+
+
+class MLPStatsBackbone(nn.Module):
     """
     ## MLP backbone
     """
@@ -135,8 +227,8 @@ class MLPBackbone(nn.Module):
         """
         super().__init__()
 
-        self.embedder = nn.Linear(seq_channels * seq_length, d_model)
-        self.unembedder = nn.Linear(d_model, seq_channels * seq_length)
+        self.embedder = nn.Linear(seq_length, d_model)
+        self.unembedder = nn.Linear(d_model, seq_length)
         self.pe = SinusoidalPosEmb(d_model)
         # self.pe = GaussianFourierProjection(d_model)
         self.net = nn.ModuleList(  # type: ignore
@@ -157,25 +249,15 @@ class MLPBackbone(nn.Module):
             self.con_linear = nn.Identity()
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
-        fft_shape = self.seq_length // 2 + 1
-        x = torch.fft.rfft(x, dim=1, norm='ortho')
-        x = torch.concat([x.real, x.imag[:,1:-1,:]], dim=1)
-        x = self.embedder(x.flatten(1))
+        c, _, _ = condition
+        x = self.embedder(x.permute(0, 2, 1))
         t = self.pe(t)
-        c = self.con_linear(condition)
+        c = self.con_linear(c)
         x = x + t + c
-        # x = self.pe(x, t, use_time_axis=False) + c
         for layer in self.net:
             x = x + layer(x)
 
-            # x = x + t + c
-        # x = x + c
-        x = self.unembedder(x).reshape((-1, self.seq_length, self.seq_channels))
-        x_re = x[:,:fft_shape, :]
-        x_im = torch.concat([torch.zeros_like(x[:,[0],:]), x[:,fft_shape:, :], torch.zeros_like(x[:,[0],:])], dim=1)
-        x = torch.stack([x_re, x_im], dim=-1)
-        x = torch.view_as_complex(x)
-        x = torch.fft.irfft(x, dim=1, norm='ortho')
+        x = self.unembedder(x).permute(0, 2, 1)
         return x
 
 
@@ -243,7 +325,6 @@ class FreqMLPBackbone(nn.Module):
         for layer in self.net:
             x = layer(x) * 0.02
 
-        
         x = x + bias
         # x = self.sparse(x)
         x = self.unembedder(x).reshape(
@@ -259,12 +340,11 @@ class SkipMLPBackbone(nn.Module):
 
     def __init__(
         self,
-        seq_channels: int,
+        input_seq_length: int,
         seq_length: int,
         hidden_size: int,
-        latent_dim: int,
+        # latent_dim: int,
         n_layers: int = 3,
-        norm: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -275,9 +355,9 @@ class SkipMLPBackbone(nn.Module):
         """
         super().__init__()
 
-        self.embedder = nn.Linear(seq_channels * seq_length, hidden_size)
-        self.unembedder = nn.Linear(hidden_size, seq_channels * seq_length)
-        self.pe = SinusoidalPosEmb(hidden_size)
+        self.embedder = nn.Linear(input_seq_length, hidden_size)
+        self.unembedder = nn.Linear(hidden_size, seq_length)
+        # self.pe = SinusoidalPosEmb(hidden_size)
         self.net = nn.ModuleList(  # type: ignore
             [
                 MLP(
@@ -288,24 +368,18 @@ class SkipMLPBackbone(nn.Module):
                 for _ in range(n_layers)
             ]
         )
-        self.seq_channels = seq_channels
         self.seq_length = seq_length
-        if hidden_size != latent_dim:
-            self.con_linear = nn.Linear(latent_dim, hidden_size)
-        else:
-            self.con_linear = nn.Identity()
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
-        x = self.embedder(x.flatten(1))
-        t = self.pe(t)
-        x = x + t
+        # x = self.embedder(x.flatten(1))
+        # t = self.pe(t)
+        # x = x + t
+        latents = self.embedder(condition.permute(0, 2, 1))
         for layer in self.net:
-            x = x + layer(x)
-        if condition is not None:
-            c = self.con_linear(condition)
-            x = x + c
-        x = self.unembedder(x).reshape((-1, self.seq_length, self.seq_channels))
-        return x
+            latents = latents + layer(latents)
+
+        pred = self.unembedder(latents).permute(0, 2, 1)
+        return pred
 
 
 class CIMLPBackbone(nn.Module):
@@ -540,6 +614,55 @@ class CIAttentionBackbone(nn.Module):
         x = x + condition
         x = self.unembedder(x)
         return x
+
+
+class SkipDLinearBackbone(nn.Module):
+    """
+    ## MLP backbone
+    """
+
+    def __init__(
+        self,
+        input_seq_length: int,
+        # seq_channels: int,
+        seq_length: int,
+        # d_model: int,
+        # latent_dim: int,
+        # n_layers: int = 3,
+        # norm: bool = False,
+        **kwargs,
+    ) -> None:
+        """
+        * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
+        * `seq_length` is the number of timesteps in the time series.
+        * `hidden_size` is the hidden size
+        * `n_layers` is the number of MLP
+        """
+        super().__init__()
+        self.seq_length = input_seq_length
+        self.pred_len = seq_length
+
+        self.decompsition = series_decomp(25)
+        self.Linear_Seasonal = nn.Linear(self.seq_length, self.pred_len)
+        self.Linear_Trend = nn.Linear(self.seq_length, self.pred_len)
+
+        self.Linear_Seasonal.weight = nn.Parameter(
+            (1 / self.seq_length) * torch.ones([self.pred_len, self.seq_length])
+        )
+        self.Linear_Trend.weight = nn.Parameter(
+            (1 / self.seq_length) * torch.ones([self.pred_len, self.seq_length])
+        )
+
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+        seasonal_init, trend_init = self.decompsition(condition)
+        seasonal_init, trend_init = (
+            seasonal_init.permute(0, 2, 1),
+            trend_init.permute(0, 2, 1),
+        )
+        seasonal_output = self.Linear_Seasonal(seasonal_init)
+        trend_output = self.Linear_Trend(trend_init)
+        out = seasonal_output + trend_output
+        return out.permute(0, 2, 1)
 
 
 class ResNetBackbone(nn.Module):
@@ -891,15 +1014,24 @@ class DiT(nn.Module):
         **kwargs,
     ):
         super().__init__()
+
         self.learn_sigma = learn_sigma
         self.in_channels = seq_channels
         self.out_channels = seq_channels * 2 if learn_sigma else seq_channels
         self.patch_size = patch_size
         self.num_heads = num_heads
         self.seq_length = seq_length
+        if kwargs.get("freq", False):
+            self.freq = kwargs.get("freq", False)
+            in_seq_length = seq_length // 2 + 1
+            in_channels = seq_channels * 2
+            self.out_channels = in_channels * 2 if learn_sigma else in_channels
+        else:
+            in_seq_length = seq_length
+            in_channels = seq_channels
 
         self.x_embedder = PatchEmbed(
-            seq_length, patch_size, seq_channels, d_model, bias=True
+            in_seq_length, patch_size, in_channels, d_model, bias=True
         )
         self.t_embedder = TimestepEmbedder(d_model)
         self.y_embedder = nn.Identity()
@@ -911,7 +1043,16 @@ class DiT(nn.Module):
         )
 
         self.blocks = nn.ModuleList(
-            [DiTBlock(d_model, num_heads, mlp_ratio=mlp_ratio) for _ in range(n_layers)]
+            [
+                DiTBlock(
+                    d_model,
+                    num_heads,
+                    mlp_ratio=mlp_ratio,
+                    attn_drop=kwargs.get("attn_drop", 0.0),
+                    proj_drop=kwargs.get("proj_drop", 0.0),
+                )
+                for _ in range(n_layers)
+            ]
         )
         self.final_layer = FinalLayer(d_model, patch_size, self.out_channels)
         self.initialize_weights()
@@ -962,7 +1103,7 @@ class DiT(nn.Module):
         """
         c = self.out_channels
         p = self.x_embedder.patch_size
-        num_patch = self.seq_length // self.patch_size
+        num_patch = x.shape[1]
         # h = w = int(x.shape[1] ** 0.5)
         # assert h * w == x.shape[1]
 
@@ -978,6 +1119,11 @@ class DiT(nn.Module):
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
         """
+        if torch.is_complex(x):
+            is_c = True
+            x = torch.concat([x.real, x.imag], dim=-1)
+        else:
+            is_c = False
         x = (
             self.x_embedder(x) + self.pos_embed
         )  # (N, T, D), where T = (seq_len / patch_size)
@@ -988,6 +1134,10 @@ class DiT(nn.Module):
             x = block(x, c)  # (N, T, D)
         x = self.final_layer(x, c)  # (N, T, patch_size * out_channels)
         x = self.unpatchify(x)  # (N, out_channels, H, W)
+        if is_c:
+            assert x.shape[-1] == 2
+            x = torch.view_as_complex(x).unsqueeze(-1)
+
         return x
 
     def forward_with_cfg(self, x, t, y, cfg_scale):

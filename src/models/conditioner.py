@@ -59,8 +59,8 @@ class RMLPConditioner(nn.Module):
 
     def forward(self, observed_data, future_features=None, **kwargs):
         x = observed_data
-        x = torch.fft.rfft(x, dim=1, norm='ortho')
-        x = torch.concat([x.real, x.imag[:,1:-1,:]], dim=1)
+        x = torch.fft.rfft(x, dim=1, norm="ortho")
+        x = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
         # x = torch.concat([x.real, x.imag[:,1:-1,:]], dim=1)
         trajs_to_encode = x.flatten(1)
 
@@ -82,6 +82,134 @@ class RMLPConditioner(nn.Module):
         #         torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
         #     )
         return out
+
+
+class RMLPStatsConditioner(nn.Module):
+    def __init__(
+        self,
+        seq_channels,
+        seq_length,
+        hidden_size,
+        latent_dim,
+        target_seq_length,
+        target_seq_channels,
+        future_seq_channels=None,
+        future_seq_length=None,
+        # norm=True,
+    ) -> None:
+        super().__init__()
+        all_input_channel = seq_channels * (seq_length)
+
+        # include external features
+        if future_seq_channels is not None and future_seq_length is not None:
+            all_input_channel += future_seq_channels * future_seq_length
+
+        self.latent_dim = latent_dim
+        # self.encode_tp = encode_tp
+        # self.input_enc = MLP(
+        #     in_channels=all_input_channel,
+        #     hidden_channels=[hidden_size, hidden_size, latent_dim],
+        # )
+        self.input_enc = MLP(
+            in_channels=all_input_channel,
+            hidden_channels=[hidden_size, hidden_size, latent_dim],
+        )
+        self.mean_dec = torch.nn.Linear(latent_dim, 1 * seq_channels)
+        self.std_dec = torch.nn.Linear(latent_dim, 1 * seq_channels)
+
+        # self.norm = norm
+        self.seq_channels = seq_channels
+        # if norm:
+        #     self.mu_net = nn.Linear(latent_dim, 1 * seq_channels)
+        #     self.std_net = nn.Linear(latent_dim, 1 * seq_channels)
+
+    def forward(self, observed_data, future_features=None, **kwargs):
+        x = observed_data
+        x = torch.fft.rfft(x, dim=1, norm="ortho")
+        x = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
+        # x = torch.concat([x.real, x.imag[:,1:-1,:]], dim=1)
+        trajs_to_encode = x.flatten(1)
+
+        # # TEST: frequency encoding
+        # freq_component = torch.fft.rfft(observed_data, dim=1).flatten(1)
+        # theta, phi = complex2sphere(freq_component.real, freq_component.imag)
+        # trajs_to_encode = torch.concat([theta, phi, trajs_to_encode], dim=-1)
+
+        if future_features is not None:
+            ff = future_features
+            trajs_to_encode = torch.concat([trajs_to_encode, ff.flatten(1)], axis=-1)
+        latents = self.input_enc(trajs_to_encode)
+        mean_pred = self.mean_dec(latents).reshape(-1, 1, self.seq_channels)
+        std_pred = self.std_dec(latents).reshape(-1, 1, self.seq_channels)
+        # if self.norm:
+        #     mu = self.mu_net(out).reshape((-1, 1, self.seq_channels))
+        #     std = self.std_net(out).reshape((-1, 1, self.seq_channels))
+        # else:
+        #     mu, std = (
+        #         torch.zeros((x.shape[0], 1, x.shape[-1]), device=x.device),
+        #         torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
+        #     )
+        return latents, mean_pred, std_pred
+
+class MLPStatsConditioner(nn.Module):
+    def __init__(
+        self,
+        seq_channels,
+        seq_length,
+        hidden_size,
+        latent_dim,
+        target_seq_length,
+        target_seq_channels,
+        future_seq_channels=None,
+        future_seq_length=None,
+        # norm=True,
+    ) -> None:
+        super().__init__()
+        all_input_channel = seq_channels * (seq_length)
+
+        # include external features
+        if future_seq_channels is not None and future_seq_length is not None:
+            all_input_channel += future_seq_channels * future_seq_length
+
+        self.latent_dim = latent_dim
+        self.embedder = nn.Linear(seq_length, hidden_size)
+        # self.encode_tp = encode_tp
+        # self.input_enc = MLP(
+        #     in_channels=all_input_channel,
+        #     hidden_channels=[hidden_size, hidden_size, latent_dim],
+        # )
+        self.input_enc = MLP(
+            in_channels=hidden_size,
+            hidden_channels=[hidden_size, latent_dim],
+        )
+        self.mean_dec = torch.nn.Linear(latent_dim, 1)
+        self.std_dec = torch.nn.Linear(latent_dim, 1)
+
+        # self.norm = norm
+        self.seq_channels = seq_channels
+        # if norm:
+        #     self.mu_net = nn.Linear(latent_dim, 1 * seq_channels)
+        #     self.std_net = nn.Linear(latent_dim, 1 * seq_channels)
+
+    def forward(self, observed_data, future_features=None, **kwargs):
+        x = observed_data
+
+        x = self.embedder(x.permute(0,2,1))
+
+
+        latents = self.input_enc(x).permute(0,2,1)
+        mean_pred = self.mean_dec(latents).permute(0,2,1)
+        std_pred = self.std_dec(latents).permute(0,2,1)
+        # if self.norm:
+        #     mu = self.mu_net(out).reshape((-1, 1, self.seq_channels))
+        #     std = self.std_net(out).reshape((-1, 1, self.seq_channels))
+        # else:
+        #     mu, std = (
+        #         torch.zeros((x.shape[0], 1, x.shape[-1]), device=x.device),
+        #         torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
+        #     )
+        return latents, mean_pred, std_pred
+
 
 class FreqMLPConditioner(nn.Module):
     def __init__(
@@ -122,7 +250,7 @@ class FreqMLPConditioner(nn.Module):
 
     def forward(self, observed_data, future_features=None, **kwargs):
         x = observed_data
-        x = torch.fft.rfft(x, dim=1, norm='ortho')
+        x = torch.fft.rfft(x, dim=1, norm="ortho")
         # x = torch.concat([x.real, x.imag[:,1:-1,:]], dim=1)
         trajs_to_encode = x.flatten(1)  # (batch_size, input_ts, input_dim)
 
@@ -181,8 +309,8 @@ class MLPConditioner(nn.Module):
 
     def forward(self, observed_data, future_features=None, **kwargs):
         x = observed_data
-        x = torch.fft.rfft(x, dim=1, norm='ortho')
-        x = torch.concat([x.real, x.imag[:,1:-1,:]], dim=1)
+        x = torch.fft.rfft(x, dim=1, norm="ortho")
+        x = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
         trajs_to_encode = x.flatten(1)  # (batch_size, input_ts, input_dim)
 
         # # TEST: frequency encoding

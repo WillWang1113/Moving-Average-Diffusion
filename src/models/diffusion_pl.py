@@ -2,7 +2,7 @@ from typing import Dict
 
 import torch
 from matplotlib import pyplot as plt
-from torch import nn
+from torch import is_complex, nn
 import lightning as L
 from gluonts.torch.model.predictor import PyTorchPredictor
 from ..models.backbone import build_backbone
@@ -18,12 +18,26 @@ from ..utils.fourier import (
 )
 
 
-def complex_mse_loss(output, target):
-    output_time = torch.fft.irfft(output, dim=1, norm="ortho")
-    target_time = torch.fft.irfft(target, dim=1, norm="ortho")
-    # output_re_im = torch.stack([output.real, output.imag])
-    # target_re_im = torch.stack([target.real, target.imag])
-    return torch.nn.functional.mse_loss(output_time, target_time)
+def complex_mse_loss(output, target, seq_len):
+    # output_time = torch.fft.irfft(output, dim=1, norm="ortho")
+    # target_time = torch.fft.irfft(target, dim=1, norm="ortho")
+    output_re_im = torch.stack([output.real, output.imag])
+    target_re_im = torch.stack([target.real, target.imag])
+    # output_mean = output_re_im[:, [0], :]
+    # target_mean = target_re_im[:, [0], :]
+    # output_std = (
+    #     torch.sum(torch.abs(output_re_im[:, 1:, :]) ** 2, dim=1, keepdim=True)
+    #     * 2
+    #     / seq_len
+    # )
+    # output_std = torch.sqrt(output_std + 1e-6)
+    # target_std = (
+    #     torch.sum(torch.abs(target_re_im[:, 1:, :]) ** 2, dim=1, keepdim=True)
+    #     * 2
+    #     / seq_len
+    # )
+    # target_std = torch.sqrt(target_std + 1e-6)
+    return torch.nn.functional.mse_loss(output_re_im, target_re_im)
 
 
 # def complex_mse_loss(output, target):
@@ -85,7 +99,6 @@ class MADTime(BaseDiffusion, L.LightningModule):
             x_filtered
         )
         # print(x_filtered.shape)
-        
 
         return x_noisy
         # # loop for each sample to temporal average
@@ -118,6 +131,7 @@ class MADTime(BaseDiffusion, L.LightningModule):
         x = self._init_noise(x_real, batch)
         c = self._encode_condition(batch)
         x = x.flatten(end_dim=1)
+        # ! test
         x, all_x, mu, std = self._sample_loop(x, c)
         if self.collect_all:
             all_x[0] = all_x[0] + mu
@@ -143,11 +157,24 @@ class MADTime(BaseDiffusion, L.LightningModule):
             # out_x = out_x.reshape(self.n_sample, *x_real.shape)
         return out_x
 
+    # ! TEST
     def _sample_loop(self, x: torch.Tensor, c: torch.Tensor):
-        if c.shape[0] != x.shape[0]:
-            c = c.repeat(
-                x.shape[0] // c.shape[0], *[1 for _ in range(len(c.shape) - 1)]
-            )
+        if isinstance(c, tuple):
+            if c[0].shape[0] != x.shape[0]:
+                c = tuple(
+                    [
+                        c[i].repeat(
+                            x.shape[0] // c[i].shape[0],
+                            *[1 for _ in range(len(c[i].shape) - 1)],
+                        )
+                        for i in range(len(c))
+                    ]
+                )
+        else:
+            if c.shape[0] != x.shape[0]:
+                c = c.repeat(
+                    x.shape[0] // c.shape[0], *[1 for _ in range(len(c.shape) - 1)]
+                )
 
         all_x = [x]
         for i in range(len(self.sample_Ts)):
@@ -163,6 +190,19 @@ class MADTime(BaseDiffusion, L.LightningModule):
             x_hat = self.backbone(x, t_tensor, c)
             if self.pred_diff:
                 x_hat = x_hat + x
+
+            # print(x_hat[0,0,0].real / (self.seq_length**0.5))
+            # print(x_real.mean(dim=1)[0,0])
+
+            # fig, ax = plt.subplots()
+            # ax.plot(torch.fft.irfft(x_hat[0, :, 0], norm="ortho").cpu().numpy(), label='pred')
+            # ax.plot(torch.fft.irfft(x[0, :, 0], norm="ortho").cpu().numpy(), label='input_x')
+            # ax.plot(x_real[0, :, 0].cpu().numpy(), label='real')
+            # ax.legend()
+            # fig.suptitle(
+            #     f"step:{t}, err:{torch.round(torch.nn.functional.mse_loss(torch.fft.irfft(x_hat[0,:,0], norm='ortho'), x_real[0,:,0]), decimals = 5)}"
+            # )
+            # fig.savefig(f"assets/step_{t}.png")
 
             x_hat_norm, _ = self._normalize(x_hat) if self.norm else (x_hat, None)
             x = self.reverse(x=x, x_hat=x_hat_norm, t=t, prev_t=prev_t)
@@ -191,6 +231,17 @@ class MADTime(BaseDiffusion, L.LightningModule):
 
         # fit on original scale
         loss = self.loss_fn(x_hat, x)
+        if isinstance(c, tuple):
+            _, mean_pred, std_pred = c
+            if torch.is_complex(x):
+                pass
+            else:
+                loss = loss + torch.nn.functional.mse_loss(
+                    mean_pred, x.mean(dim=1, keepdim=True)
+                ) + torch.nn.functional.mse_loss(
+                    std_pred, x.std(dim=1, keepdim=True)
+                )
+
         return loss
 
     def _init_noise(
@@ -198,7 +249,7 @@ class MADTime(BaseDiffusion, L.LightningModule):
         x: torch.Tensor,
         condition: Dict[str, torch.Tensor] = None,
     ):
-        # SINGLE
+        # one sample
         # # * INIT ON TIME DOMAIN AND DO TRANSFORM
         # # TODO: condition on basic predicion f(x)
         # if (condition is not None) and (self.conditioner is not None):
@@ -224,25 +275,39 @@ class MADTime(BaseDiffusion, L.LightningModule):
         #     )
         # return noise
 
+        # multiple samples
         # * INIT ON TIME DOMAIN AND DO TRANSFORM
         # TODO: condition on basic predicion f(x)
         if (condition is not None) and (self.conditioner is not None):
-            # ! just for test !
-            # ! use latest observed as zero frequency component !
+            # just for test !
+            # use latest observed as zero frequency component !
             device = condition["observed_data"].device
-            time_value = condition["observed_data"][:, [-1], :]
-            prev_value = (
-                torch.zeros(*time_value.shape, device=device, dtype=time_value.dtype)
-                if self.norm
-                else time_value
-            )
-            prev_value = prev_value.expand(-1, x.shape[1], -1)
+            if self.init_model:
+                time_value = self.init_model(**condition)
+                # For test
+                # time_value = torch.mean(time_value, dim=1, keepdim=True)
+            else:
+                # time_value = self.conditioner(**condition)[-1] / (self.seq_length ** 0.5)
+                time_value = torch.mean(condition["observed_data"], dim=1, keepdim=True)
+                # time_value = time_value + 0.1*torch.randn(
+                #     10, *time_value.shape, device=time_value.device, dtype=time_value.dtype
+                # )
+                # time_value = time_value.flatten(end_dim=1)
+                # time_value = condition["observed_data"][:, [-1], :]
+            assert time_value.shape[1] == 1
 
-            noise = prev_value + torch.randn(
+            # ! CHEATING TEST !
+            # # time_value = condition["observed_data"][:, [-1], :]
+            # time_value = torch.mean(x, dim=1, keepdim=True)
+            # # print(time_value[0][:10])
+
+            x_noisy = torch.zeros_like(time_value) if self.norm else time_value
+            x_noisy = x_noisy.expand(-1, self.seq_length, -1)
+            noise = x_noisy + torch.randn(
                 self.n_sample,
-                *prev_value.shape,
+                *x_noisy.shape,
                 device=device,
-                dtype=prev_value.dtype,
+                dtype=x_noisy.dtype,
             )
 
         else:
@@ -267,8 +332,12 @@ class MADTime(BaseDiffusion, L.LightningModule):
         sigmas: torch.Tensor = None,
         sample_steps=None,
         collect_all=False,
+        init_model: torch.nn.Module = None,
+        # init_pred: torch.Tensor= None
         # flatten_nosie=True,
     ):
+        # self.init_pred = init_pred
+        self.init_model = init_model
         self.n_sample = n_sample
         self.collect_all = collect_all
         self.sample_Ts = (
@@ -339,7 +408,7 @@ class MADFreq(MADTime):
         freq_response = torch.concat([df.Hw for df in self.degrade_fn])
         self.register_buffer("freq_response", freq_response)
         # self.betas = self.betas
-        self.loss_fn = complex_mse_loss
+        self.loss_fn = lambda x, y: complex_mse_loss(x, y, self.seq_length)
 
     # torch.fft.rfft version
     @torch.no_grad

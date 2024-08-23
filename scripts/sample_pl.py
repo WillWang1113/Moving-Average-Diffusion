@@ -1,4 +1,5 @@
 import argparse
+import json
 import pandas as pd
 import torch
 import numpy as np
@@ -8,12 +9,15 @@ from tqdm import tqdm
 from gluonts.torch.model.predictor import PyTorchPredictor
 from src.utils.filters import get_factors
 from src.models.diffusion_pl import MADFreq, MADTime
+from src.benchmarks.PatchTST import Model
 from lightning import Trainer
 from lightning.fabric import seed_everything
 from src.utils.sample import plot_fcst, temporal_avg
 from src.utils.metrics import calculate_metrics
+
 # torch.set_float32_matmul_precision('high')
 logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
+
 
 def main(args):
     # quantiles = [0.05 * (1 + i) for i in range(19)]
@@ -47,7 +51,7 @@ def main(args):
 
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
 
-    trainer = Trainer(devices=[args.gpu], enable_progress_bar=False)
+    trainer = Trainer(devices=[args.gpu], enable_progress_bar=False, fast_dev_run=args.smoke_test)
     avg_m = []
 
     for i in range(args.num_train):
@@ -55,8 +59,20 @@ def main(args):
 
         read_d = os.path.join(exp_path, f"best_model_path_{i}.pt")
 
+        # model_parser = argparse.ArgumentParser()
+        # model_args = model_parser.parse_args()
+        with open("base_ckpt/args.txt", "r") as f:
+            model_args = json.load(f)
+        model_args = argparse.Namespace(**model_args)
+        
+        if args.init_model:
+            init_model = Model(configs=model_args)
+            init_model.load_state_dict(torch.load("base_ckpt/checkpoint.pth"))
+        else:
+            init_model = None
+
         best_model_path = torch.load(read_d)
-        if args.kind =='freq':
+        if args.kind == "freq":
             diff = MADFreq.load_from_checkpoint(best_model_path)
         else:
             diff = MADTime.load_from_checkpoint(best_model_path)
@@ -69,7 +85,9 @@ def main(args):
         else:
             sigmas = torch.linspace(0.2, 0.1, len(diff.betas))
 
-        diff.config_sampling(args.n_sample, sigmas, sample_steps, args.collect_all)
+        diff.config_sampling(
+            args.n_sample, sigmas, sample_steps, args.collect_all, init_model=init_model
+        )
         y_real = []
         y_pred = trainer.predict(diff, test_dl)
         y_pred = torch.concat(y_pred, dim=1)
@@ -79,7 +97,7 @@ def main(args):
         #     y_pred.append(y_p)
         # y_pred = torch.stack(y_pred)
         for b in test_dl:
-            y_real.append(b['future_data'])
+            y_real.append(b["future_data"])
         y_real = torch.concat(y_real)
         if args.collect_all:
             y_pred, y_real = temporal_avg(y_pred, y_real, kernel_size, args.kind)
@@ -138,5 +156,6 @@ if __name__ == "__main__":
     parser.add_argument("--smoke_test", action="store_true")
     parser.add_argument("--collect_all", action="store_true")
     parser.add_argument("--n_sample", type=int, default=100)
+    parser.add_argument("--init_model", action="store_true", default=False)
     args = parser.parse_args()
     main(args)

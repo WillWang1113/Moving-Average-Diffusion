@@ -21,7 +21,9 @@ data_dict = {
 
 
 def data_provider(args, flag):
-    args = argparse.Namespace(**args)
+    if isinstance(args, dict):
+        args = argparse.Namespace(**args)
+        
     Data = data_dict[args.data]
     # timeenc = 0 if args.embed != "timeF" else 1
 

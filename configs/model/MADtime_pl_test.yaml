@@ -1,10 +1,11 @@
 bb_config:
-  name: MLPBackbone
+  name: MLPStatsBackbone
+  input_seq_length: 96
   # name: MLPBackbone
-  d_model: 128
-  d_mlp: 1024
-  # hidden_size: 512
-  n_layers: 5
+  # d_model: 128
+  # d_mlp: 1024
+  hidden_size: 128
+  n_layers: 1
   # patch_size: 8
   # num_heads: 8
   dropout: 0.1
@@ -12,8 +13,8 @@ bb_config:
   # obs_seq_length: 96
 
 cn_config:
-  # name: MLPConditioner
-  name: MLPConditioner
+  name: MLPStatsConditioner
+  # name: IdentityConditioner
   hidden_size: 512
   latent_dim: 128
 
@@ -21,7 +22,7 @@ diff_config:
   name: MADTime
   noise_schedule: std
   norm: off
-  pred_diff: on
+  pred_diff: off
 
 train_config:
   epochs: 100

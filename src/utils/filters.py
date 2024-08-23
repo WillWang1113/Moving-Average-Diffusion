@@ -42,6 +42,7 @@ class MovingAvgTime(nn.Module):
         # self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride)
 
     def forward(self, x: torch.Tensor):
+        # print(x.shape)
         assert x.shape[1] == self.seq_length
         # orig_size = x.shape[1]
 

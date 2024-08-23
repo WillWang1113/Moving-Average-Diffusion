@@ -41,7 +41,7 @@ class Model(nn.Module):
         super().__init__()
         self.task_name = configs.task_name
         self.seq_len = configs.seq_len
-        self.pred_len = configs.pred_len
+        self.pred_len = 1 if configs.pred_mean else configs.pred_len
         padding = stride
 
         # patching and embedding
@@ -210,18 +210,18 @@ class Model(nn.Module):
         output = self.projection(output)  # (batch_size, num_classes)
         return output
 
-    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
+    def forward(self, observed_data, x_mark_enc=None, x_dec=None, x_mark_dec=None, mask=None, **kwargs):
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
-            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+            dec_out = self.forecast(observed_data, x_mark_enc, x_dec, x_mark_dec)
             return dec_out[:, -self.pred_len:, :]  # [B, L, D]
         if self.task_name == 'imputation':
             dec_out = self.imputation(
-                x_enc, x_mark_enc, x_dec, x_mark_dec, mask)
+                observed_data, x_mark_enc, x_dec, x_mark_dec, mask)
             return dec_out  # [B, L, D]
         if self.task_name == 'anomaly_detection':
-            dec_out = self.anomaly_detection(x_enc)
+            dec_out = self.anomaly_detection(observed_data)
             return dec_out  # [B, L, D]
         if self.task_name == 'classification':
-            dec_out = self.classification(x_enc, x_mark_enc)
+            dec_out = self.classification(observed_data, x_mark_enc)
             return dec_out  # [B, N]
         return None

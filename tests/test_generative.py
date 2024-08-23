@@ -156,10 +156,11 @@ if __name__ == "__main__":
         "ECL": "electricity",
         "Exchange": "exchange_rate",
         "TrafficL": "traffic",
-        "Weather": "weather",
+        # "Weather": "weather",
     }
 
-    model_name = "MADfreq_v2"
+    model_name = "MADfreq_pl_learnmean"
+    # pred_len = [96, 192]
     pred_len = [96, 192, 336, 720]
     # save_dir = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/"
     save_dir = root_pth
@@ -169,7 +170,7 @@ if __name__ == "__main__":
         ds_df = []
         for pl in pred_len:
             result_path = os.path.join(save_dir, f"{real_d}_{pl}_S",
-                                       model_name, "fast_dtm_.csv")
+                                       model_name, "dtm_.csv")
             df = pd.read_csv(result_path, index_col=0)
 
             df = df.drop(columns=["MAE", "granularity"])
@@ -195,7 +196,8 @@ if __name__ == "__main__":
     #     header=[0, 1])
     # all_df = pd.concat([all_df, all_bench_df], axis=1)
     # print(all_df)
-    all_df.to_csv(os.path.join(save_dir, 'result.csv'))
+    all_df.to_csv(f'{model_name}.csv')
+    # all_df.to_csv(os.path.join(save_dir, 'result.csv'))
     # print(all_df.to_latex(float_format="{:.3f}".format))
 
     # import pandas as pd

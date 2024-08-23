@@ -1,6 +1,6 @@
 bb_config:
-  # name: RMLPBackbone
-  name: MLPBackbone
+  name: RMLPBackbone
+  # name: MLPBackbone
   d_model: 128
   d_mlp: 1024
   # hidden_size: 512
@@ -12,15 +12,15 @@ bb_config:
   # obs_seq_length: 96
 
 cn_config:
-  name: MLPConditioner
-  # name: RMLPConditioner
+  # name: MLPConditioner
+  name: RMLPConditioner
   hidden_size: 512
   latent_dim: 128
 
 diff_config:
-  name: MADTime
-  noise_schedule: std
-  norm: on
+  name: MADFreq
+  noise_schedule: freqresp
+  norm: off
   pred_diff: on
 
 train_config:

@@ -73,7 +73,13 @@ def prepare_train(model_config, data_config, args, n):
         if df_.__contains__("MAD")
         else model_config["diff_config"]["T"]
     )
-    noise_schedule = get_schedule(ns_name, n_steps, data_name=args['data_config'], train_dl=train_dl, check_pth=data_folder)
+    noise_schedule = get_schedule(
+        ns_name,
+        n_steps,
+        data_name=args["data_config"],
+        train_dl=train_dl,
+        check_pth=data_folder,
+    )
     return model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl
 
 
@@ -120,6 +126,8 @@ def main(args, n):
         devices=[args["gpu"]],
         callbacks=[es, mc],
         default_root_dir=save_folder,
+        fast_dev_run=args["smoke_test"],
+        # enable_progress_bar=args["smoke_test"],
         # **model_config["train_config"],
     )
 

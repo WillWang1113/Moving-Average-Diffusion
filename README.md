@@ -77,7 +77,7 @@ $$\begin{cases}
 | mlp_time_23M | 0.078413 | 0.065104 | 0.059050 | -->
 
 
-### Benchmark
+<!-- ### Benchmark
 ### DDPM
 
 | Method       | RMSE     | MAE      | CRPS     |
@@ -87,7 +87,7 @@ $$\begin{cases}
 | mlp_freq_23M | 0.056778 | 0.047382 | 0.042925 |
 | mlp_time_23M | 0.078413 | 0.065104 | 0.059050 |
 
-
+ -->
 
 <!-- | mlp_freq_700k (FAIL)       | 0.108959 | 0.089177 | 0.088174 |
 | mlp_time_700k (FAIL)       | 0.103443 | 0.085088 | 0.073611 |
@@ -96,14 +96,14 @@ $$\begin{cases}
 ### MovingAvg Diffusion
 
 <!-- Linear schedule, deterministic sampling, fast_sample -->
-Test test
+<!-- Test test
 NHITS from AAAI     0.038xxxx
 Transformers      > 0.04xxxx
 
 training not so 
-sampling
+sampling -->
 
-
+<!-- 
 | method                     | RMSE     | MAE      | CRPS     |
 | -------------------------- | -------- | -------- | -------- |
 | mlp_freq_norm_on_diff_on   | 0.032953 | 0.024754 | 0.029487 |
@@ -113,9 +113,9 @@ sampling
 | cnn_freq_norm_on_diff_on   | 0.035590 | 0.026405 | 0.031303 |
 | cnn_freq_norm_on_diff_off  | 0.032834 | 0.024736 | 0.030798 |
 | cnn_time_norm_on_diff_on   | 0.036176 | 0.026803 | 0.031058 |
-| cnn_time_norm_on_diff_off  | 0.035221 | 0.026047 | 0.030936 |
+| cnn_time_norm_on_diff_off  | 0.035221 | 0.026047 | 0.030936 | -->
 
-
+<!-- 
 | method                     | RMSE     | MAE      | CRPS     |
 | -------------------------- | -------- | -------- | -------- |
 | mlp_freq_norm_off_diff_on  | 0.085846 | 0.065210 | 0.067466 |
@@ -125,15 +125,15 @@ sampling
 | cnn_freq_norm_off_diff_on  | 0.090144 | 0.065718 | 0.068588 |
 | cnn_freq_norm_off_diff_off | 0.043629 | 0.032828 | 0.037774 |
 | cnn_time_norm_off_diff_on  | 0.073314 | 0.053837 | 0.056869 |
-| cnn_time_norm_off_diff_off | 0.081367 | 0.057613 | 0.060580 |
-
+| cnn_time_norm_off_diff_off | 0.081367 | 0.057613 | 0.060580 | -->
+<!-- 
 | Method       | RMSE       | MAE        | MPBL       |
 |--------------|------------|------------|------------|
 | NHITS        | 0.03810358 | 0.02838966 | 0.01080347 |
 | AutoFormer   | 0.08808306 | 0.07150063 | 0.0266976  |
 | TFT          | 0.0442315  | 0.03230586 | 0.01252146 |
 | **MAD-time** | 0.032865   | 0.024394   | 0.011276   |
-| **MAD-freq** | 0.032315   | 0.024193   | 0.011372   |
+| **MAD-freq** | 0.032315   | 0.024193   | 0.011372   | -->
 <!-- Constant schedule($\beta_t$=0, cold), deterministic sampling, fast_sample
 | method                                     | RMSE     | MAE      | CRPS     |
 | ------------------------------------------ | -------- | -------- | -------- |
@@ -158,16 +158,17 @@ Stochastic sampling ($\sigma_t > 0$, Linear schedule, [0.01, 0.1])
 | cnn_time | 0.060331 | 0.043948 | 0.046540 |
 | mlp_freq | 0.069998 | 0.051043 | 0.053416 |
 | mlp_time | 0.057428 | 0.041764 | 0.043979 |
-| DLinear  | 0.089804 | 0.073082 | -        | --> -->
+| DLinear  | 0.089804 | 0.073082 | -        | --> 
 
 
 
 ## TODO
-- [ ] instance normalization -- bug fixing
-- [ ] $\sigma_t$ design -- cosine schedules
+- [X] instance normalization
+- [X] $\sigma_t$ design
+- [X] other SOTA forecasting method -- DLinear too strong
+- [X] embedding $t$ multiplication -- no use
+- [ ] forecast refinement
 - [ ] check the intermediate products (muli-resolution forecasts)
-- [ ] other SOTA forecasting method -- DLinear
-- [ ] embedding $t$ multiplication
 
 <!-- - [ ] $\beta_t = \mathbf{\tilde{K}}_t$ -->
 

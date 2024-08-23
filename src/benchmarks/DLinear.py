@@ -96,17 +96,17 @@ class Model(nn.Module):
         output = self.projection(output)
         return output
 
-    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
+    def forward(self, observed_data, x_mark_enc=None, x_dec=None, x_mark_dec=None, mask=None, **kwargs):
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
-            dec_out = self.forecast(x_enc)
+            dec_out = self.forecast(observed_data)
             return dec_out[:, -self.pred_len:, :]  # [B, L, D]
         if self.task_name == 'imputation':
-            dec_out = self.imputation(x_enc)
+            dec_out = self.imputation(observed_data)
             return dec_out  # [B, L, D]
         if self.task_name == 'anomaly_detection':
-            dec_out = self.anomaly_detection(x_enc)
+            dec_out = self.anomaly_detection(observed_data)
             return dec_out  # [B, L, D]
         if self.task_name == 'classification':
-            dec_out = self.classification(x_enc)
+            dec_out = self.classification(observed_data)
             return dec_out  # [B, N]
         return None

@@ -1,19 +1,21 @@
 bb_config:
-  name: MLPBackbone
+  name: DiT
   # name: MLPBackbone
   d_model: 128
-  d_mlp: 1024
+  # d_mlp: 1024
   # hidden_size: 512
-  n_layers: 5
-  # patch_size: 8
+  n_layers: 4
+  patch_size: 8
   # num_heads: 8
-  dropout: 0.1
+  # dropout: 0.1
+  attn_drop: 0.1
+  proj_drop: 0.1
   # bias: False
   # obs_seq_length: 96
 
 cn_config:
   # name: MLPConditioner
-  name: MLPConditioner
+  name: RMLPConditioner
   hidden_size: 512
   latent_dim: 128
 

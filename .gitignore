@@ -169,3 +169,5 @@ notebooks/test.ipynb
 datasets/
 lightning_logs/
 *.png
+*.csv
+base_ckpt/
