@@ -127,7 +127,7 @@ def main(args, n):
         callbacks=[es, mc],
         default_root_dir=save_folder,
         fast_dev_run=args["smoke_test"],
-        # enable_progress_bar=args["smoke_test"],
+        enable_progress_bar=args["smoke_test"],
         # **model_config["train_config"],
     )
 

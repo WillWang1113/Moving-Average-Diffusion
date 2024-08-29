@@ -1,4 +1,3 @@
-from fcntl import DN_RENAME
 import sys
 import torch
 from typing import List, Union, Tuple
@@ -144,8 +143,8 @@ class RMLPStatsBackbone(nn.Module):
         """
         super().__init__()
 
-        self.embedder = nn.Linear(seq_channels * (seq_length), d_model)
-        self.unembedder = nn.Linear(d_model, seq_channels * (seq_length))
+        self.embedder = nn.Linear(seq_length, d_model)
+        self.unembedder = nn.Linear(d_model, seq_length)
         self.pe = SinusoidalPosEmb(d_model)
         # self.pe = GaussianFourierProjection(d_model)
         self.net = nn.ModuleList(  # type: ignore
@@ -164,29 +163,33 @@ class RMLPStatsBackbone(nn.Module):
             self.con_linear = nn.Linear(latent_dim, d_model)
         else:
             self.con_linear = nn.Identity()
+        self.con_pred = nn.Linear(d_model, seq_length)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
-        c, mean_pred, std_pred = condition
+        c, _, _ = condition
         fft_shape = x.shape[1]
         x_real_imag = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
-        x = self.embedder(x_real_imag.flatten(1))
-        t = self.pe(t)
-        c = self.con_linear(c)
+        
+        x = self.embedder(x_real_imag.permute(0,2,1))   # [bs, chn, d_model]
+        t = self.pe(t).unsqueeze(1)     # [bs, 1 d_model]
+        c = self.con_linear(c)  # [bs, chn, d_model]
+        c_pred = self.con_pred(c).permute(0,2,1)
+        
+        
         x = x + t + c
-        # x = self.pe(x, t, use_time_axis=False) + c
         for layer in self.net:
-            x = x + layer(x)
+            x = x + layer(x)    # [bs, chn, d_model]
 
-            # x = x + t + c
-        # x = x + c
-        x = self.unembedder(x).reshape((-1, (self.seq_length), self.seq_channels))
-        x = x * std_pred + torch.concat(
-            [
-                mean_pred,
-                torch.zeros_like(x[:, 1:, :]),
-            ],
-            dim=1,
-        )
+        x = self.unembedder(x).permute(0,2,1)   # [bs, seq_len, chn]
+        x = x + c_pred
+        
+        # x = x * std_pred + torch.concat(
+        #     [
+        #         mean_pred,
+        #         torch.zeros_like(x[:, 1:, :]),
+        #     ],
+        #     dim=1,
+        # )
         # x = torch.nn.functional.softshrink(x)
         x_re = x[:, :fft_shape, :]
         x_im = torch.concat(
@@ -247,17 +250,44 @@ class MLPStatsBackbone(nn.Module):
             self.con_linear = nn.Linear(latent_dim, d_model)
         else:
             self.con_linear = nn.Identity()
+            
+        self.con_pred = nn.Linear(d_model, seq_length)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
         c, _, _ = condition
+        
+        # # ! for test
+        # x = torch.fft.rfft(x, dim=1, norm='ortho')
+        # fft_len = x.shape[1]
+        # x = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
+        
+        
         x = self.embedder(x.permute(0, 2, 1))
-        t = self.pe(t)
+        t = self.pe(t).unsqueeze(1)
         c = self.con_linear(c)
-        x = x + t + c
+        c_pred = self.con_pred(c).permute(0,2,1)
+        
+        
+        x = (x + t) + c
         for layer in self.net:
             x = x + layer(x)
-
         x = self.unembedder(x).permute(0, 2, 1)
+        
+        # # ! for test
+        # x_re = x[:, :fft_len, :]
+        # x_im = torch.concat(
+        #     [
+        #         torch.zeros_like(x[:, [0], :]),
+        #         x[:, fft_len:, :],
+        #         torch.zeros_like(x[:, [0], :]),
+        #     ],
+        #     dim=1,
+        # )
+        # x = torch.stack([x_re, x_im], dim=-1)
+        # x = torch.view_as_complex(x)
+        # x = torch.fft.irfft(x, dim=1, norm='ortho')
+        
+        x = x + c_pred
         return x
 
 
@@ -333,53 +363,53 @@ class FreqMLPBackbone(nn.Module):
         return x
 
 
-class SkipMLPBackbone(nn.Module):
-    """
-    ## MLP backbone
-    """
+# class SkipMLPBackbone(nn.Module):
+#     """
+#     ## MLP backbone
+#     """
 
-    def __init__(
-        self,
-        input_seq_length: int,
-        seq_length: int,
-        hidden_size: int,
-        # latent_dim: int,
-        n_layers: int = 3,
-        **kwargs,
-    ) -> None:
-        """
-        * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
-        * `seq_length` is the number of timesteps in the time series.
-        * `hidden_size` is the hidden size
-        * `n_layers` is the number of MLP
-        """
-        super().__init__()
+#     def __init__(
+#         self,
+#         input_seq_length: int,
+#         seq_length: int,
+#         hidden_size: int,
+#         # latent_dim: int,
+#         n_layers: int = 3,
+#         **kwargs,
+#     ) -> None:
+#         """
+#         * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
+#         * `seq_length` is the number of timesteps in the time series.
+#         * `hidden_size` is the hidden size
+#         * `n_layers` is the number of MLP
+#         """
+#         super().__init__()
 
-        self.embedder = nn.Linear(input_seq_length, hidden_size)
-        self.unembedder = nn.Linear(hidden_size, seq_length)
-        # self.pe = SinusoidalPosEmb(hidden_size)
-        self.net = nn.ModuleList(  # type: ignore
-            [
-                MLP(
-                    in_channels=hidden_size,
-                    hidden_channels=[hidden_size * 2, hidden_size],
-                    dropout=0.1,
-                )
-                for _ in range(n_layers)
-            ]
-        )
-        self.seq_length = seq_length
+#         self.embedder = nn.Linear(input_seq_length, hidden_size)
+#         self.unembedder = nn.Linear(hidden_size, seq_length)
+#         # self.pe = SinusoidalPosEmb(hidden_size)
+#         self.net = nn.ModuleList(  # type: ignore
+#             [
+#                 MLP(
+#                     in_channels=hidden_size,
+#                     hidden_channels=[hidden_size * 2, hidden_size],
+#                     dropout=0.1,
+#                 )
+#                 for _ in range(n_layers)
+#             ]
+#         )
+#         self.seq_length = seq_length
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
-        # x = self.embedder(x.flatten(1))
-        # t = self.pe(t)
-        # x = x + t
-        latents = self.embedder(condition.permute(0, 2, 1))
-        for layer in self.net:
-            latents = latents + layer(latents)
+#     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+#         # x = self.embedder(x.flatten(1))
+#         # t = self.pe(t)
+#         # x = x + t
+#         latents = self.embedder(condition.permute(0, 2, 1))
+#         for layer in self.net:
+#             latents = latents + layer(latents)
 
-        pred = self.unembedder(latents).permute(0, 2, 1)
-        return pred
+#         pred = self.unembedder(latents).permute(0, 2, 1)
+#         return pred
 
 
 class CIMLPBackbone(nn.Module):
@@ -616,53 +646,53 @@ class CIAttentionBackbone(nn.Module):
         return x
 
 
-class SkipDLinearBackbone(nn.Module):
-    """
-    ## MLP backbone
-    """
+# class SkipDLinearBackbone(nn.Module):
+#     """
+#     ## MLP backbone
+#     """
 
-    def __init__(
-        self,
-        input_seq_length: int,
-        # seq_channels: int,
-        seq_length: int,
-        # d_model: int,
-        # latent_dim: int,
-        # n_layers: int = 3,
-        # norm: bool = False,
-        **kwargs,
-    ) -> None:
-        """
-        * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
-        * `seq_length` is the number of timesteps in the time series.
-        * `hidden_size` is the hidden size
-        * `n_layers` is the number of MLP
-        """
-        super().__init__()
-        self.seq_length = input_seq_length
-        self.pred_len = seq_length
+#     def __init__(
+#         self,
+#         input_seq_length: int,
+#         # seq_channels: int,
+#         seq_length: int,
+#         # d_model: int,
+#         # latent_dim: int,
+#         # n_layers: int = 3,
+#         # norm: bool = False,
+#         **kwargs,
+#     ) -> None:
+#         """
+#         * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
+#         * `seq_length` is the number of timesteps in the time series.
+#         * `hidden_size` is the hidden size
+#         * `n_layers` is the number of MLP
+#         """
+#         super().__init__()
+#         self.seq_length = input_seq_length
+#         self.pred_len = seq_length
 
-        self.decompsition = series_decomp(25)
-        self.Linear_Seasonal = nn.Linear(self.seq_length, self.pred_len)
-        self.Linear_Trend = nn.Linear(self.seq_length, self.pred_len)
+#         self.decompsition = series_decomp(25)
+#         self.Linear_Seasonal = nn.Linear(self.seq_length, self.pred_len)
+#         self.Linear_Trend = nn.Linear(self.seq_length, self.pred_len)
 
-        self.Linear_Seasonal.weight = nn.Parameter(
-            (1 / self.seq_length) * torch.ones([self.pred_len, self.seq_length])
-        )
-        self.Linear_Trend.weight = nn.Parameter(
-            (1 / self.seq_length) * torch.ones([self.pred_len, self.seq_length])
-        )
+#         self.Linear_Seasonal.weight = nn.Parameter(
+#             (1 / self.seq_length) * torch.ones([self.pred_len, self.seq_length])
+#         )
+#         self.Linear_Trend.weight = nn.Parameter(
+#             (1 / self.seq_length) * torch.ones([self.pred_len, self.seq_length])
+#         )
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
-        seasonal_init, trend_init = self.decompsition(condition)
-        seasonal_init, trend_init = (
-            seasonal_init.permute(0, 2, 1),
-            trend_init.permute(0, 2, 1),
-        )
-        seasonal_output = self.Linear_Seasonal(seasonal_init)
-        trend_output = self.Linear_Trend(trend_init)
-        out = seasonal_output + trend_output
-        return out.permute(0, 2, 1)
+#     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+#         seasonal_init, trend_init = self.decompsition(condition)
+#         seasonal_init, trend_init = (
+#             seasonal_init.permute(0, 2, 1),
+#             trend_init.permute(0, 2, 1),
+#         )
+#         seasonal_output = self.Linear_Seasonal(seasonal_init)
+#         trend_output = self.Linear_Trend(trend_init)
+#         out = seasonal_output + trend_output
+#         return out.permute(0, 2, 1)
 
 
 class ResNetBackbone(nn.Module):

@@ -158,9 +158,12 @@ def calculate_metrics(
         print("Evaluate on highest resolution")
         assert y_pred.ndim == 4
         assert y_pred[0].shape == y_real.shape
+        print(y_pred.shape)
         y_pred_point = np.mean(y_pred, axis=0)
         y_pred_q = np.quantile(y_pred, quantiles, axis=0)
+        print(y_pred_q.shape)
         y_pred_q = np.transpose(y_pred_q, (1,2,3,0))
+        print(y_pred_q.shape)
 
         MAE = mae(y_real, y_pred_point)
         MSE = mse(y_real, y_pred_point)
