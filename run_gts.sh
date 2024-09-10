@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # export CUDA_VISIBLE_DEVICES=1
-gpu=0
+gpu=1
 model_config=MADfreq_gts
 save_dir=/home/user/data/FrequencyDiffusion/savings
 # save_dir=/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings
@@ -19,8 +19,8 @@ seq_len=96
 pred_len=(96)
 # pred_len=(96 192 336 720)
 DATASETS=(
-  # 'electricity_nips'
-  'traffic_nips'
+  'electricity_nips'
+  # 'traffic_nips'
   # 'solar_nips'
   # 'exchange_rate_nips'
   # 'wiki2000_nips'
@@ -36,7 +36,7 @@ for i in "${pred_len[@]}"; do
       --save_dir $save_dir \
       --seq_len $seq_len \
       --pred_len $i \
-      --gpu $gpu --num_train 1 --dataset $j --num_samples 100
+      --gpu $gpu --num_train 1 --dataset $j --num_samples 100 --epochs 100
     # python scripts/sample_pl.py \
     #   --save_dir $save_dir \
     #   --dataset $j \

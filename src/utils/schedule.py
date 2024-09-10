@@ -19,17 +19,30 @@ def get_schedule(noise_name, n_steps, data_name=None,train_dl=None, check_pth=No
 
 
 def linear_schedule(n_steps, min_beta=1e-4, max_beta=2e-2):
-    betas_bars = torch.linspace(min_beta, max_beta, n_steps)
-    alpha_bars = 1 - betas_bars
-    alphas = torch.cumprod(alpha_bars, dim=0)
-    betas = torch.sqrt(1 - alpha_bars)
+    betas = torch.linspace(min_beta, max_beta, n_steps)
+    alphas = 1 - betas
+    alpha_bars = torch.cumprod(alphas, dim=0)
+    
     return {
         "alpha_bars": alpha_bars.float(),
-        "betas_bars": betas_bars.float(),
+        "beta_bars": None,
         "alphas": alphas.float(),
         "betas": betas.float(),
     }
-    return alpha_bars, betas_bars, alphas, betas
+    # return alpha_bars, beta_bars, alphas, betas
+
+# def linear_schedule(n_steps, min_beta=1e-4, max_beta=2e-2):
+#     beta_bars = torch.linspace(min_beta, max_beta, n_steps)
+#     alpha_bars = 1 - beta_bars
+#     alphas = torch.cumprod(alpha_bars, dim=0)
+#     betas = torch.sqrt(1 - alpha_bars)
+#     return {
+#         "alpha_bars": alpha_bars.float(),
+#         "beta_bars": beta_bars.float(),
+#         "alphas": alphas.float(),
+#         "betas": betas.float(),
+#     }
+#     return alpha_bars, beta_bars, alphas, betas
 
 
 def cosine_schedule(n_steps):
@@ -52,7 +65,7 @@ def cosine_schedule(n_steps):
     alphas = 1 - betas
     return {
         "alpha_bars": alphas.float(),
-        "betas_bars": betas.float(),
+        "beta_bars": betas.float(),
         "alphas": alphas_cumprod[1:].float(),
         "betas": torch.sqrt(1 - alphas_cumprod[1:]).float(),
     }
@@ -68,7 +81,7 @@ def cosine_schedule(n_steps):
 def zero_schedule(n_steps):
     return {
         "alpha_bars": None,
-        "betas_bars": None,
+        "beta_bars": None,
         "alphas": torch.ones(n_steps).float(),
         "betas": torch.zeros(n_steps).float(),
     }
@@ -85,7 +98,7 @@ def std_schedule(data_name, train_dl, check_pth):
         all_ratio = torch.load(file_name)
         return {
             "alpha_bars": None,
-            "betas_bars": None,
+            "beta_bars": None,
             "alphas": None,
             "betas": torch.sqrt(1 - all_ratio**2).float(),
         }
@@ -116,7 +129,7 @@ def std_schedule(data_name, train_dl, check_pth):
         torch.save(all_ratio, file_name)
         return {
             "alpha_bars": None,
-            "betas_bars": None,
+            "beta_bars": None,
             "alphas": None,
             "betas": torch.sqrt(1 - all_ratio**2).float(),
         }
@@ -125,7 +138,7 @@ def std_schedule(data_name, train_dl, check_pth):
 
 def freqresp_schedule(n_steps):
     seq_len = n_steps + 1
-    fr = [MovingAvgFreq(i, seq_len).Hw.flatten() for i in range(2, seq_len + 1)]
+    fr = [MovingAvgFreq(i, seq_len).K.diag() for i in range(2, seq_len + 1)]
     fr = torch.stack(fr)  # [steps, seq_len//2 + 1]
     fr = 1 - (fr.conj() * fr).real
     fr = torch.sqrt(fr + 1e-6)
@@ -139,7 +152,7 @@ def freqresp_schedule(n_steps):
     # assert fr_cat.shape[1] == seq_len
     return {
         "alpha_bars": None,
-        "betas_bars": None,
+        "beta_bars": None,
         "alphas": None,
         "betas": fr.float(),
     }

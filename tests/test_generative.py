@@ -69,23 +69,23 @@ if __name__ == "__main__":
 
     # SAVE METRICS
     ds = {
-        # "ECL": "electricity",
-        # "ETTh1": "etth1",
-        # "ETTh2": "etth2",
-        # "ETTm1": "ettm1",
-        # "ETTm2": "ettm2",
-        # "Exchange": "exchange_rate",
-        # "TrafficL": "traffic",
-        # "Weather": "weather",
-        "MFRED":"mfred"
+        "ECL": "electricity",
+        "ETTh1": "etth1",
+        "ETTh2": "etth2",
+        "ETTm1": "ettm1",
+        "ETTm2": "ettm2",
+        "Exchange": "exchange_rate",
+        "TrafficL": "traffic",
+        "Weather": "weather",
+        # "MFRED":"mfred"
     }
 
-    model_name = "MADtime_pl_doublenorm"
+    model_name = "MADfreq_pl_doublenorm_zerodp"
     # pred_len = [96]
     # pred_len = [96, 192]
     # pred_len = [96, 192, 336]
-    # pred_len = [96, 192, 336, 720]
-    pred_len = [288,432,576]
+    pred_len = [96, 192, 336, 720]
+    # pred_len = [288, 432, 576]
     # save_dir = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings/"
     save_dir = root_pth
     all_df = []
@@ -93,8 +93,9 @@ if __name__ == "__main__":
         real_d = ds[d]
         ds_df = []
         for pl in pred_len:
-            result_path = os.path.join(save_dir, f"{real_d}_{pl}_S",
-                                       model_name, "dtm_.csv")
+            result_path = os.path.join(
+                save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.csv"
+            )
             df = pd.read_csv(result_path, index_col=0)
 
             df = df.drop(columns=["MAE", "granularity"])
@@ -105,14 +106,14 @@ if __name__ == "__main__":
             ds_df.append(df)
 
         ds_df = pd.concat(ds_df)
-        ds_df.index.name = 'pred_len'
-        ds_df['dataset'] = d
+        ds_df.index.name = "pred_len"
+        ds_df["dataset"] = d
         ds_df = ds_df.reset_index()
-        ds_df = ds_df.set_index(['dataset', 'pred_len'])
+        ds_df = ds_df.set_index(["dataset", "pred_len"])
         all_df.append(ds_df)
     all_df = pd.concat(all_df)
     print(all_df)
-    # all_df.to_csv('')
+    all_df.to_csv(f"assets/dp0.3_{model_name}.csv")
 
     # all_bench_df = pd.read_csv(
     #     '/mnt/ExtraDisk/wcx/research/benchmarks/bench_result.csv',

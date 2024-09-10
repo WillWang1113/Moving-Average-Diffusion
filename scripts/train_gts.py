@@ -24,14 +24,15 @@ from gluonts.evaluation import make_evaluation_predictions, Evaluator
 
 
 from src.utils.parser import exp_parser
-from src.models import diffusion_gts
+from src.models.diffusion_gts import MAD
 from src.utils.schedule import get_schedule
 
 
 def prepare_train(model_config, args, n, dataloader):
     root_pth = args["save_dir"]
     df_ = model_config["diff_config"].pop("name")
-    df = getattr(diffusion_gts, df_)
+    # df = getattr(diffusion_gts, df_)
+    df = MAD
     print(df)
     data_folder = os.path.join(
         root_pth,
@@ -146,8 +147,7 @@ def main(args, n):
     model_config, noise_schedule, df, save_folder = prepare_train(
         model_config, args, n, train_dl
     )
-    # # ! MUST SETUP SEED AFTER prepare_train
-    # # setup_seed(n)
+
     diff = df(
         backbone_config=model_config["bb_config"],
         conditioner_config=model_config["cn_config"],
@@ -182,7 +182,7 @@ def main(args, n):
     # torch.save(mc.best_model_path, os.path.join(save_folder, f'best_model_path_{n}.pt'))
     # diff = df.load_from_checkpoint(checkpoint_path='/home/user/data/FrequencyDiffusion/savings/electricity_nips_96_96/MADfreq_gts/lightning_logs/version_16/checkpoints/epoch=66-step=6700.ckpt')
     diff = df.load_from_checkpoint(checkpoint_path=mc.best_model_path)
-    diff.config_sampling()
+    diff.config_sampling(n_sample=args['num_samples'])
     diff_predictor = diff.get_predictor(transformation + prediction_splitter)
     forecast_it, ts_it = make_evaluation_predictions(
         dataset=dataset.test, predictor=diff_predictor, num_samples=args['num_samples']

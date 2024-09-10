@@ -1,5 +1,5 @@
 bb_config:
-  name: MLPBackbone
+  name: RMLPBackbone
   # input_seq_length: 96
   # name: MLPBackbone
   d_model: 128
@@ -8,22 +8,22 @@ bb_config:
   n_layers: 3
   # patch_size: 8
   # num_heads: 8
-  dropout: 0.1
+  dropout: 0.3
   # bias: False
   # obs_seq_length: 96
 
 cn_config:
-  name: MLPStatsConditioner
+  name: RMLPStatsConditioner
   # name: IdentityConditioner
   hidden_size: 256
   latent_dim: 128
 
 diff_config:
   name: MAD
-  noise_schedule: std
+  noise_schedule: freqresp
   norm: on
   pred_diff: off
-  freq: off
+  freq: on
 
 train_config:
   epochs: 100

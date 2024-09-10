@@ -5,11 +5,10 @@ import torch
 import numpy as np
 import os
 import logging
-from tqdm import tqdm
-from gluonts.torch.model.predictor import PyTorchPredictor
 from src.utils.filters import get_factors
-from src.models.diffusion_pl import MADFreq, MADTime
-from src.benchmarks.PatchTST import Model
+from src import models
+
+# from src.models.diffusion_pl import MADFreq, MADTime
 from lightning import Trainer
 from lightning.fabric import seed_everything
 from src.utils.sample import plot_fcst, temporal_avg
@@ -51,8 +50,13 @@ def main(args):
 
     test_dl = torch.load(os.path.join(root_path, "test_dl.pt"))
 
-    trainer = Trainer(devices=[args.gpu], enable_progress_bar=False, fast_dev_run=args.smoke_test)
+    trainer = Trainer(
+        devices=[args.gpu], enable_progress_bar=False, fast_dev_run=args.smoke_test
+    )
     avg_m = []
+    exp_config = os.path.join(exp_path, "config.json")
+    model_name = json.load(open(exp_config, "rb"))["diff_config"]["name"]
+    model_class = getattr(models, model_name)
 
     for i in range(args.num_train):
         # /home/user/data/FrequencyDiffusion/savings/etth1_96_S/MADfreq_v2/lightning_logs/version_0/checkpoints/epoch=8-step=603.ckpt
@@ -64,18 +68,22 @@ def main(args):
         with open("base_ckpt/args.txt", "r") as f:
             model_args = json.load(f)
         model_args = argparse.Namespace(**model_args)
-        
-        if args.init_model:
-            init_model = Model(configs=model_args)
-            init_model.load_state_dict(torch.load("base_ckpt/checkpoint.pth"))
-        else:
-            init_model = None
+
+        # if args.init_model:
+        #     init_model = Model(configs=model_args)
+        #     init_model.load_state_dict(torch.load("base_ckpt/checkpoint.pth"))
+        # else:
+        #     init_model = None
+        init_model = None
 
         best_model_path = torch.load(read_d)
-        if args.kind == "freq":
-            diff = MADFreq.load_from_checkpoint(best_model_path)
-        else:
-            diff = MADTime.load_from_checkpoint(best_model_path)
+        # diff = DDPM.load_from_checkpoint(best_model_path)
+        diff = model_class.load_from_checkpoint(best_model_path)
+
+        # if args.kind == "freq":
+        #     diff = MADFreq.load_from_checkpoint(best_model_path)
+        # else:
+        #     diff = MADTime.load_from_checkpoint(best_model_path)
         # diff = diff.load
 
         # diff = torch.load(read_d)
@@ -85,9 +93,14 @@ def main(args):
         else:
             sigmas = torch.linspace(0.2, 0.1, len(diff.betas))
 
-        diff.config_sampling(
-            args.n_sample, sigmas, sample_steps, args.collect_all, init_model=init_model
-        )
+        # FOR MAD
+        # diff.config_sampling(
+        #     args.n_sample, sigmas=sigmas, sample_steps=sample_steps, init_model=init_model
+        # )
+
+        # FOR DDPM
+        diff.config_sampling(args.n_sample)
+
         y_real = []
         y_pred = trainer.predict(diff, test_dl)
         y_pred = torch.concat(y_pred, dim=1)
@@ -123,6 +136,13 @@ def main(args):
         if args.smoke_test:
             break
     avg_m = np.array(avg_m)
+    np.save(
+        os.path.join(
+            exp_path,
+            f"{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}.npy",
+        ),
+        avg_m,
+    )
     df = pd.DataFrame(
         avg_m.mean(axis=0, keepdims=False if args.collect_all else True),
         columns=["MAE", "MSE", "CRPS"],
@@ -146,7 +166,7 @@ if __name__ == "__main__":
     parser.add_argument("--pred_len", required=True, type=int)
     parser.add_argument("--task", required=True, type=str)
     parser.add_argument("--model_name", type=str, required=True)
-    parser.add_argument("--kind", type=str, required=True, choices=["freq", "time"])
+    # parser.add_argument("--kind", type=str, required=True, choices=["freq", "time"])
 
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--num_train", type=int, default=5)

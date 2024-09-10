@@ -13,17 +13,19 @@ bb_config:
   # obs_seq_length: 96
 
 cn_config:
-  name: MLPStatsConditioner
+  name: MLPConditioner
   # name: IdentityConditioner
   hidden_size: 256
   latent_dim: 128
 
 diff_config:
-  name: MAD
-  noise_schedule: std
+  name: DDPM
+  noise_schedule: linear
   norm: on
-  pred_diff: off
-  freq: off
+  pred_x0: on
+  T: 100
+  # pred_diff: off
+  # freq: on
 
 train_config:
   epochs: 100

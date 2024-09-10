@@ -28,7 +28,6 @@ from torch.utils.tensorboard import SummaryWriter
 # from src.models.diffusion import DDPM
 from tqdm import tqdm
 
-from src.models.base import BaseModel
 import numpy as np
 
 
@@ -128,7 +127,7 @@ class Trainer:
 
     def fit(
         self,
-        model: BaseModel,
+        model,
         train_dataloader,
         val_dataloader=None,
     ):
@@ -189,7 +188,7 @@ class Trainer:
             model.load_state_dict(torch.load(best_model_path))
         return model
 
-    def validate(self, model: BaseModel, dataloader):
+    def validate(self, model, dataloader):
         test_loss = 0
         model.eval()
         for batch in dataloader:
@@ -199,7 +198,7 @@ class Trainer:
             test_loss += loss
         return test_loss / len(dataloader)
 
-    def predict(self, model: BaseModel, dataloader):
+    def predict(self, model, dataloader):
         model.to(self.device)
         model.eval()
         all_pred, all_label = [], []

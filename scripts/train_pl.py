@@ -1,44 +1,42 @@
 import argparse
 import json
 import os
+
 import torch
 import yaml
 from lightning import Trainer
 from lightning.fabric import seed_everything
-from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 
 from src.datamodule.data_factory import data_provider
-from src.models import diffusion_pl
+from src import models
 from src.utils.parser import exp_parser
 from src.utils.schedule import get_schedule
-from src.utils.metrics import calculate_metrics
 
 
 def prepare_train(model_config, data_config, args, n):
     root_pth = args["save_dir"]
-    # exp_name = (
-    #     f"{get_expname_(model_config, data_config)}_{'t' if args['smoke_test'] else n}"
-    # )
+
     _, train_dl = data_provider(data_config, "train")
     _, val_dl = data_provider(data_config, "val")
     _, test_dl = data_provider(data_config, "test")
 
-    # data_fn = getattr(dataset, data_config.pop("data_fn"))
-    # train_dl, val_dl, test_dl, scaler = data_fn(data_config)
-
-    df_ = model_config["diff_config"].pop("name")
-    df = getattr(diffusion_pl, df_)
-    print(df)
     data_folder = os.path.join(
         root_pth,
         f"{args['data_config']}_{data_config['pred_len']}_{data_config['features']}",
     )
     save_folder = os.path.join(data_folder, args["model_config"])
-    # save_folder = os.path.join(data_folder, df_, exp_name)
     os.makedirs(save_folder, exist_ok=True)
     with open(os.path.join(save_folder, "config.json"), "w") as w:
         json.dump(model_config, w, indent=2)
+        
+        
+    df_ = model_config["diff_config"].pop("name")
+    df = getattr(models, df_)
+    print(df)
+    # save_folder = os.path.join(data_folder, df_, exp_name)
+
 
     # with open(os.path.join(data_folder, "scaler.npy"), "wb") as f:
     #     np.save(f, scaler)
@@ -84,7 +82,6 @@ def prepare_train(model_config, data_config, args, n):
 
 
 def main(args, n):
-    device = f"cuda:{args['gpu']}" if torch.cuda.is_available() else "cpu"
 
     data_config = yaml.safe_load(
         open(f'configs/dataset/{args["data_config"]}.yaml', "r")
@@ -132,17 +129,8 @@ def main(args, n):
     )
 
     trainer.fit(diff, train_dl, val_dl)
-    # for p in diff.parameters():
-    #     print(p[0,0])
-    #     break
-    # return 0
 
     torch.save(mc.best_model_path, os.path.join(save_folder, f"best_model_path_{n}.pt"))
-    # diff = df.load_from_checkpoint(checkpoint_path=mc.best_model_path)
-    # diff.config_sampling()
-    # pred = trainer.predict(diff, test_dl)
-    # pred = torch.concat(pred)
-    # print(pred.shape)
 
     print(mc.best_model_path)
 
@@ -167,13 +155,6 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--num_train", type=int, default=5)
 
-    # # Define overrides on models
-    # parser.add_argument("--diff_config.name", type=str)
-    # parser.add_argument("--diff_config.norm", action="store_true", default=None)
-    # parser.add_argument("--diff_config.pred_diff", action="store_true", default=None)
-    # parser.add_argument("--diff_config.noise_schedule", type=str)
-    # parser.add_argument("--bb_config.name", type=str)
-    # parser.add_argument("--bb_config.hidden_size", type=int)
 
     # Define overrides on dataset
     parser.add_argument("--pred_len", type=int)
