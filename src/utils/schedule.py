@@ -91,7 +91,7 @@ def std_schedule(data_name, train_dl, check_pth):
     batch = next(iter(train_dl))
     seq_length = batch["future_data"].shape[1]
 
-    file_name = os.path.join(check_pth, f"stdratio_{data_name}_{seq_length}.pt")
+    file_name = os.path.join(check_pth, f"norm_stdratio_{data_name}_{seq_length}.pt")
     exist = os.path.exists(file_name)
     if exist:
         print("Use pre-computed schedule!")
@@ -111,15 +111,19 @@ def std_schedule(data_name, train_dl, check_pth):
         all_ratio = []
         for batch in tqdm.tqdm(train_dl):
             x = batch["future_data"]
-            orig_std = torch.sqrt(
-                torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5
-            )
+            mean = torch.mean(x, dim=1, keepdim=True)
+            stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-6)
+            x_norm = (x - mean) / stdev
+            
+            
+            orig_std = 1
+            
             step_ratios = []
             for j in range(2, seq_length + 1):
                 mat = MovingAvgTime(j, seq_length=seq_length)
-                x_avg = mat(x)
+                x_avg_norm = mat(x_norm)
                 std_avg = torch.sqrt(
-                    torch.var(x_avg, dim=1, keepdim=True, unbiased=False) + 1e-5
+                    torch.var(x_avg_norm, dim=1, keepdim=True, unbiased=False) + 1e-5
                 )
                 ratio = std_avg / orig_std
                 step_ratios.append(ratio)

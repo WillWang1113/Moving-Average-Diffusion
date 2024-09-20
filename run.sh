@@ -1,22 +1,22 @@
 #!/bin/bash
 
-gpu=1
-model_config=VanDDPM+xnorm+cnorm
+gpu=0
+model_config=MADtime_pl_doublenorm_FreqDenoise
 save_dir=/home/user/data/FrequencyDiffusion/savings
 # save_dir=/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings
 
 # ! Others
 seq_len=96
-pred_len=(96)
-# pred_len=(96 192 336 720)
+# pred_len=(720)
+pred_len=(96 192 336 720)
 data_pth=(
-  # etth1
-  # etth2
+  etth1
+  etth2
   exchange_rate
   electricity
   traffic
   weather
-  # ettm1
+  ettm1
   ettm2
 )
 

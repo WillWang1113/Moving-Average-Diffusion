@@ -159,7 +159,7 @@ class MLPStatsConditioner(nn.Module):
         target_seq_channels,
         future_seq_channels=None,
         future_seq_length=None,
-        # norm=True,
+        norm=True,
     ) -> None:
         super().__init__()
         all_input_channel = seq_channels * (seq_length)
@@ -169,9 +169,10 @@ class MLPStatsConditioner(nn.Module):
             all_input_channel += future_seq_channels * future_seq_length
 
         self.latent_dim = latent_dim
+        self.norm = norm
         # self.embedder = nn.Linear(seq_length, hidden_size)
-
-        self.rev = RevIN(seq_channels)
+        if norm:
+            self.rev = RevIN(seq_channels)
         self.input_enc = MLP(
             in_channels=seq_length,
             hidden_channels=[hidden_size, latent_dim],
@@ -190,11 +191,18 @@ class MLPStatsConditioner(nn.Module):
         #     self.std_net = nn.Linear(latent_dim, 1 * seq_channels)
 
     def forward(self, observed_data, future_features=None, **kwargs):
-        x_norm = self.rev(observed_data, "norm")
+        if self.norm:
+            x_norm = self.rev(observed_data, "norm")
+        else:
+            x_norm = observed_data
+            
         latents = self.input_enc(x_norm.permute(0, 2, 1))
-
         y_pred = self.pred_dec(latents).permute(0, 2, 1)
-        y_pred_denorm = self.rev(y_pred, "denorm")
+        
+        if self.norm:
+            y_pred_denorm = self.rev(y_pred, "denorm")
+        else:
+            y_pred_denorm = y_pred
         mean_pred = self.mean_dec(y_pred_denorm.permute(0, 2, 1)).permute(0, 2, 1)
         std_pred = self.std_dec(y_pred_denorm.permute(0, 2, 1)).permute(0, 2, 1)
         # if self.norm:
@@ -208,7 +216,7 @@ class MLPStatsConditioner(nn.Module):
         return {"latents": latents, "mean_pred": mean_pred, "std_pred": std_pred}
         return latents, mean_pred, std_pred
 
-class MLPConditioner(nn.Module):
+class NoNormMLPConditioner(nn.Module):
     def __init__(
         self,
         seq_channels,

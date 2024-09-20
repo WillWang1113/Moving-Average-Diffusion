@@ -171,3 +171,4 @@ lightning_logs/
 *.png
 *.csv
 base_ckpt/
+checkpoints/

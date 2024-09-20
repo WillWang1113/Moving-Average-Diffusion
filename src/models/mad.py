@@ -1,5 +1,6 @@
 from typing import Dict
 
+from matplotlib import pyplot as plt
 import torch
 import torch.nn.functional as F
 import lightning as L
@@ -70,7 +71,7 @@ class MAD(L.LightningModule):
         x = torch.fft.rfft(x, dim=1, norm="ortho") if self.freq else x
 
         loss = self._get_loss(x, batch, x_mean, x_std)
-        
+
         self.log("train_loss", loss, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
@@ -78,7 +79,7 @@ class MAD(L.LightningModule):
         x = batch.pop("future_data")
         # if norm
         x, (x_mean, x_std) = self._normalize(x) if self.norm else (x, (None, None))
-        
+
         # if frequency domain
         x = torch.fft.rfft(x, dim=1, norm="ortho") if self.freq else x
 
@@ -90,14 +91,14 @@ class MAD(L.LightningModule):
         assert self._sample_ready
         x_real = batch.pop("future_data")
         x = self._init_noise(x_real, batch)
-        
+
         # treat different samples as batch
         x = x.flatten(end_dim=1)
-        
+
         # DFT, optional
         if self.freq:
             x = torch.fft.rfft(x, dim=1, norm="ortho")
-            
+
         c = self._encode_condition(batch)
 
         # align shape, repeat conditions
@@ -109,6 +110,7 @@ class MAD(L.LightningModule):
 
         x = self._sample_loop(x, c)
 
+        # IDFT, optional
         if self.freq:
             x = torch.fft.irfft(x, dim=1, norm="ortho")
 
@@ -174,23 +176,45 @@ class MAD(L.LightningModule):
         if (condition is not None) and (self.conditioner is not None):
             device = condition["observed_data"].device
 
-            if self.norm:
-                # sample from zero-mean
-                noise = torch.zeros_like(x)
-            else:
-                if self.init_model:
-                    # extra model predict x_T
-                    noise = self.init_model(**condition)
+            first_step = self.sample_Ts[0]
+            # print(first_step)
+            if self.init_model is None:
+                if self.norm:
+                    # sample from zero-mean
+                    noise = torch.zeros_like(x)
+
+                    # ! TEST:
+                    # t = torch.ones((x.shape[0],), device=x.device, dtype=torch.int) * first_step
+                    # noise = self.K[t] @ x
+                    # noise, _ = self._normalize(noise)
                 else:
                     # assume stationary
                     noise = torch.mean(condition["observed_data"], dim=1, keepdim=True)
-                noise = noise.expand(-1, self.seq_length, -1)
+                    noise = noise.expand(-1, self.seq_length, -1)
+                assert noise.shape == x.shape
+            else:
+                noise = self.init_model(**condition)
+                if noise.shape[1] != self.seq_length:
+                    noise = F.interpolate(
+                        noise.permute(0, 2, 1),
+                        size=self.seq_length,
+                        mode="nearest-exact",
+                    ).permute(0, 2, 1)
 
-            noise = noise + torch.randn(
-                self.n_sample,
-                *noise.shape,
-                device=device,
-                dtype=noise.dtype,
+                
+                if self.norm:
+                    noise, _ = self._normalize(noise)
+                assert noise.shape == x.shape
+
+            noise = (
+                noise
+                + torch.randn(
+                    self.n_sample,
+                    *noise.shape,
+                    device=device,
+                    dtype=noise.dtype,
+                )
+                * self.betas[first_step]
             )
         # TODO: unconditional
         else:
@@ -217,9 +241,7 @@ class MAD(L.LightningModule):
     ):
         self.init_model = init_model
         self.n_sample = n_sample
-        self.sample_Ts = (
-            list(range(self.T - 1, -1, -1)) if sample_steps is None else sample_steps
-        )
+        self.sample_Ts = list(range(self.T)) if sample_steps is None else sample_steps
         self.sample_Ts.sort(reverse=True)
         sigmas = torch.zeros_like(self.betas) if sigmas is None else sigmas
         self.register_buffer("sigmas", sigmas)

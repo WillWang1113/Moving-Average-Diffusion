@@ -7,6 +7,7 @@ import os
 import logging
 from src.utils.filters import get_factors
 from src import models
+from src.benchmarks.PatchTST import Model
 
 # from src.models.diffusion_pl import MADFreq, MADTime
 from lightning import Trainer
@@ -19,11 +20,9 @@ logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNIN
 
 
 def main(args):
-    # quantiles = [0.05 * (1 + i) for i in range(19)]
     root_path = os.path.join(
         args.save_dir, f"{args.dataset}_{args.pred_len}_{args.task}"
     )
-    # device = f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu"
     # print("Using: ", device)
     seed_everything(9)
     seq_length = args.pred_len
@@ -39,10 +38,20 @@ def main(args):
         # kernel_size.sort()
 
         sample_steps = [factors.index(i) for i in kernel_size]
+        if args.start_ks is not None:
+            start_T = factors.index(args.start_ks)
+            if start_T in sample_steps:
+                sample_steps = sample_steps[: sample_steps.index(start_T)]
+            else:
+                sample_steps += [start_T]
         sample_steps.reverse()
     else:
         kernel_size = [i for i in range(2, seq_length + 1)]
         sample_steps = None
+        if args.start_ks is not None:
+            start_T = kernel_size.index(args.start_ks)
+            sample_steps = list(range(start_T + 1))
+
     kernel_size.sort()
     kernel_size.reverse()
     kernel_size += [1]
@@ -57,36 +66,23 @@ def main(args):
     exp_config = os.path.join(exp_path, "config.json")
     model_name = json.load(open(exp_config, "rb"))["diff_config"]["name"]
     model_class = getattr(models, model_name)
-
-    for i in range(args.num_train):
-        # /home/user/data/FrequencyDiffusion/savings/etth1_96_S/MADfreq_v2/lightning_logs/version_0/checkpoints/epoch=8-step=603.ckpt
-
-        read_d = os.path.join(exp_path, f"best_model_path_{i}.pt")
-
-        # model_parser = argparse.ArgumentParser()
-        # model_args = model_parser.parse_args()
-        with open("base_ckpt/args.txt", "r") as f:
+    if args.init_model is not None:
+        with open(f"checkpoints/{args.init_model}/args.txt", "r") as f:
             model_args = json.load(f)
         model_args = argparse.Namespace(**model_args)
-
-        # if args.init_model:
-        #     init_model = Model(configs=model_args)
-        #     init_model.load_state_dict(torch.load("base_ckpt/checkpoint.pth"))
-        # else:
-        #     init_model = None
+        init_model = Model(configs=model_args)
+        init_model.load_state_dict(
+            torch.load(f"checkpoints/{args.init_model}//checkpoint.pth")
+        )
+    else:
         init_model = None
 
+    for i in range(args.num_train):
+        read_d = os.path.join(exp_path, f"best_model_path_{i}.pt")
+
         best_model_path = torch.load(read_d)
-        # diff = DDPM.load_from_checkpoint(best_model_path)
-        diff = model_class.load_from_checkpoint(best_model_path)
+        diff = model_class.load_from_checkpoint(best_model_path, map_location=f'cuda:{args.gpu}')
 
-        # if args.kind == "freq":
-        #     diff = MADFreq.load_from_checkpoint(best_model_path)
-        # else:
-        #     diff = MADTime.load_from_checkpoint(best_model_path)
-        # diff = diff.load
-
-        # diff = torch.load(read_d)
         # FOR DIFFUSIONS
         if args.deterministic:
             sigmas = torch.zeros_like(diff.betas)
@@ -94,21 +90,16 @@ def main(args):
             sigmas = torch.linspace(0.2, 0.1, len(diff.betas))
 
         # FOR MAD
-        # diff.config_sampling(
-        #     args.n_sample, sigmas=sigmas, sample_steps=sample_steps, init_model=init_model
-        # )
-
-        # FOR DDPM
-        diff.config_sampling(args.n_sample)
+        diff.config_sampling(
+            args.n_sample,
+            sigmas=sigmas,
+            sample_steps=sample_steps,
+            init_model=init_model,
+        )
 
         y_real = []
         y_pred = trainer.predict(diff, test_dl)
         y_pred = torch.concat(y_pred, dim=1)
-        # for _ in tqdm(range(args.n_sample)):
-        #     y_p = trainer.predict(diff, test_dl)
-        #     y_p = torch.concat(y_p)
-        #     y_pred.append(y_p)
-        # y_pred = torch.stack(y_pred)
         for b in test_dl:
             y_real.append(b["future_data"])
         y_real = torch.concat(y_real)
@@ -143,28 +134,32 @@ def main(args):
         ),
         avg_m,
     )
-    df = pd.DataFrame(
-        avg_m.mean(axis=0, keepdims=False if args.collect_all else True),
-        columns=["MAE", "MSE", "CRPS"],
-        # columns=["RMSE", "MAE", "CRPS", "MPBL"],
-    )
-    print(df)
-    # df["method"] = d.split("/")[-1]
-    df["granularity"] = kernel_size if args.collect_all else 1
-    df.to_csv(
-        os.path.join(
-            exp_path,
-            f"{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}.csv",
-        )
-    )
+    print(avg_m.mean(axis=0))
+    # print(avg_m)
+    # df = pd.DataFrame(
+    #     avg_m.mean(axis=0, keepdims=False if args.collect_all else True),
+    #     columns=["MAE", "MSE", "CRPS"],
+    #     # columns=["RMSE", "MAE", "CRPS", "MPBL"],
+    # )
+    # print(avg_m.measn(axis=0, keepdims=False if args.collect_all else True))
+    # # df["method"] = d.split("/")[-1]
+    # df["granularity"] = kernel_size if args.collect_all else 1
+    # df.to_csv(
+    #     os.path.join(
+    #         exp_path,
+    #         f"{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}.csv",
+    #     )
+    # )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Hyperparameters config")
-    parser.add_argument("--save_dir", required=True, type=str)
-    parser.add_argument("--dataset", required=True, type=str)
-    parser.add_argument("--pred_len", required=True, type=int)
-    parser.add_argument("--task", required=True, type=str)
+    parser.add_argument(
+        "--save_dir", type=str, default="/home/user/data/FrequencyDiffusion/savings"
+    )
+    parser.add_argument("--dataset", type=str, default="etth2")
+    parser.add_argument("--pred_len", type=int, default=96)
+    parser.add_argument("--task", type=str, default="S", choices=["S", "M"])
     parser.add_argument("--model_name", type=str, required=True)
     # parser.add_argument("--kind", type=str, required=True, choices=["freq", "time"])
 
@@ -176,6 +171,7 @@ if __name__ == "__main__":
     parser.add_argument("--smoke_test", action="store_true")
     parser.add_argument("--collect_all", action="store_true")
     parser.add_argument("--n_sample", type=int, default=100)
-    parser.add_argument("--init_model", action="store_true", default=False)
+    parser.add_argument("--start_ks", type=int, default=None)
+    parser.add_argument("--init_model", type=str, default=None)
     args = parser.parse_args()
     main(args)

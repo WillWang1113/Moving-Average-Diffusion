@@ -1,6 +1,7 @@
 import os
 
 import pandas as pd
+import numpy as np
 
 from src.utils.train import setup_seed
 
@@ -80,7 +81,8 @@ if __name__ == "__main__":
         # "MFRED":"mfred"
     }
 
-    model_name = "MADfreq_pl_doublenorm_zerodp"
+    model_name = "MADtime_pl_doublenorm_FreqDenoise"
+    # model_name = "MADfreq_pl_doublenorm_zerodp"
     # pred_len = [96]
     # pred_len = [96, 192]
     # pred_len = [96, 192, 336]
@@ -94,26 +96,31 @@ if __name__ == "__main__":
         ds_df = []
         for pl in pred_len:
             result_path = os.path.join(
-                save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.csv"
+                save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.npy"
             )
-            df = pd.read_csv(result_path, index_col=0)
-
-            df = df.drop(columns=["MAE", "granularity"])
-            df["method"] = model_name
-            df = df.set_index("method")
-            df = df.stack()
-            df = pd.DataFrame(df, columns=[pl]).transpose()
-            ds_df.append(df)
-
+            # result_path = os.path.join(
+            #     save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.csv"
+            # )
+            results = np.load(result_path)
+            df = pd.DataFrame(results, columns=['MAE', 'MSE', 'CRPS'])
+            df = df.drop(columns=["MAE"])
+            df_mean = df.mean()
+            df_mean["method"] = model_name
+            df_mean['pred_len'] = pl
+            df_mean = pd.DataFrame(df_mean).T
+            # df_mean = df_mean.set_index("method")
+            ds_df.append(df_mean)
         ds_df = pd.concat(ds_df)
-        ds_df.index.name = "pred_len"
+
+        # ds_df.index.name = "pred_len"
         ds_df["dataset"] = d
-        ds_df = ds_df.reset_index()
+        # ds_df = ds_df.reset_index()
         ds_df = ds_df.set_index(["dataset", "pred_len"])
+        print(ds_df)
         all_df.append(ds_df)
     all_df = pd.concat(all_df)
     print(all_df)
-    all_df.to_csv(f"assets/dp0.3_{model_name}.csv")
+    all_df.to_csv(f"assets/{model_name}.csv")
 
     # all_bench_df = pd.read_csv(
     #     '/mnt/ExtraDisk/wcx/research/benchmarks/bench_result.csv',

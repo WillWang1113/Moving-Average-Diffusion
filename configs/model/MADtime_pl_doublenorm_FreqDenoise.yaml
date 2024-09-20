@@ -1,5 +1,5 @@
 bb_config:
-  name: MLPStatsBackbone
+  name: FreqMLPBackbone
   input_seq_length: 96
   # name: MLPBackbone
   d_model: 128
@@ -17,12 +17,14 @@ cn_config:
   # name: IdentityConditioner
   hidden_size: 256
   latent_dim: 128
+  norm: on
 
 diff_config:
-  name: MADTime
+  name: MAD
   noise_schedule: std
   norm: on
   pred_diff: off
+  freq: off
 
 train_config:
   epochs: 100
