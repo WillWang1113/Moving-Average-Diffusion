@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import lightning as L
 from ..models.backbone import build_backbone
 from ..models.conditioner import build_conditioner
-from ..utils.filters import MovingAvgFreq, MovingAvgTime
+from ..utils.filters import MovingAvgFreq, MovingAvgTime, get_factors
 
 
 def complex_mse_loss(output, target):
@@ -27,7 +27,11 @@ class MAD(L.LightningModule):
         pred_diff=False,
         lr=2e-4,
         alpha=1e-5,
+        p_uncond=0.,
+        w_cond=0.,
         freq=False,
+        factor_only=False,
+        stride_equal_to_kernel_size=False,
     ) -> None:
         super().__init__()
         self.backbone = build_backbone(backbone_config)
@@ -38,12 +42,27 @@ class MAD(L.LightningModule):
         self.lr = lr
         self.alpha = alpha
         self.freq = freq
+        self.p_uncond = p_uncond
+        self.w_cond = w_cond
         self.loss_fn = complex_mse_loss if freq else F.mse_loss
 
         # config diffusion steps
-        self.factors = [i for i in range(2, self.seq_length + 1)]
+        self.factors = (
+            get_factors(self.seq_length)
+            if factor_only
+            else list(range(2, self.seq_length + 1))
+        )
+        if self.freq:
+            assert not stride_equal_to_kernel_size
+            degrade_class = MovingAvgFreq
+        else:
+            degrade_class = (
+                MovingAvgTime
+                if not stride_equal_to_kernel_size
+                else lambda f, sl: MovingAvgTime(f, sl, stride=f)
+            )
+
         self.T = len(self.factors)
-        degrade_class = MovingAvgFreq if freq else MovingAvgTime
         self.degrade_fn = [degrade_class(f, self.seq_length) for f in self.factors]
         K = torch.stack([df.K for df in self.degrade_fn])
 
@@ -100,6 +119,7 @@ class MAD(L.LightningModule):
             x = torch.fft.rfft(x, dim=1, norm="ortho")
 
         c = self._encode_condition(batch)
+        # print(torch.nn.functional.mse_loss(c['mean_pred'], x_real.mean(dim=1, keepdim=True)))
 
         # align shape, repeat conditions
         for k in c:
@@ -115,6 +135,14 @@ class MAD(L.LightningModule):
             x = torch.fft.irfft(x, dim=1, norm="ortho")
 
         # denorm
+        # !! test from extra model prediction stats
+        # stats_pred = self.init_model(**batch)
+        # mu = stats_pred[:,[0],:]
+        # # print(torch.nn.functional.mse_loss(mu, x_real.mean(dim=1, keepdim=True)))
+        # std = stats_pred[:,[1],:]
+        # mu = mu.repeat(self.n_sample, 1, 1)
+        # std = std.repeat(self.n_sample, 1, 1)
+
         mu = c["mean_pred"] if self.norm else 0.0
         std = c["std_pred"] if self.norm else 1.0
         out_x = x * std + mu
@@ -134,13 +162,23 @@ class MAD(L.LightningModule):
             prev_t = None if t == 0 else self.sample_Ts[i + 1]
             t_tensor = torch.tensor(t, device=x.device).expand(x.shape[0])
 
+            # fig, ax = plt.subplots()
+            # ax.plot(x.reshape(self.n_sample, -1, self.seq_length, 1)[0, 0].flatten().cpu(), label='x_t')
             # pred x_0
             x_hat = self.backbone(x, t_tensor, c)
             if self.pred_diff:
                 x_hat = x_hat + x
+            # ax.plot(
+                # x_hat.reshape(self.n_sample, -1, self.seq_length, 1)[0, 0].flatten().cpu(), label='\hat x_0'
+            # )
 
             # x_{t-1}
             x = self.reverse(x=x, x_hat=x_hat, t=t, prev_t=prev_t)
+            # ax.plot(
+            #     x.reshape(self.n_sample, -1, self.seq_length, 1)[0, 0].flatten().cpu(), label='x_t-1'
+            # )
+            # ax.legend()
+            # fig.savefig(f'assets/test{self.factors[t]}.png')
 
         return x
 
@@ -198,14 +236,16 @@ class MAD(L.LightningModule):
                     noise = F.interpolate(
                         noise.permute(0, 2, 1),
                         size=self.seq_length,
-                        mode="nearest-exact",
+                        mode="linear",
+                        # mode="nearest-exact",
                     ).permute(0, 2, 1)
 
-                
                 if self.norm:
                     noise, _ = self._normalize(noise)
                 assert noise.shape == x.shape
 
+            # fig, ax = plt.subplots()
+            # ax.plot(noise[0].flatten().cpu())
             noise = (
                 noise
                 + torch.randn(
@@ -216,6 +256,8 @@ class MAD(L.LightningModule):
                 )
                 * self.betas[first_step]
             )
+            # ax.plot(noise[0, 0].flatten().cpu())
+            # fig.savefig("test.png")
         # TODO: unconditional
         else:
             noise = self.degrade(

@@ -42,7 +42,7 @@ class Model(nn.Module):
         super().__init__()
         self.task_name = configs.task_name
         self.seq_len = configs.seq_len
-        self.pred_len = configs.pred_len - configs.ma_ks + 1
+        self.pred_len = int((configs.pred_len - configs.ma_ks) / configs.ma_stride + 1)
         padding = stride
 
         # patching and embedding
@@ -84,7 +84,10 @@ class Model(nn.Module):
         self.configs = configs
         if configs.prob == 1:
             self.quantile_linear = nn.Linear(self.pred_len, configs.n_quantile * self.pred_len)
-
+        
+        if configs.pred_stats==1:
+            self.mean_linear = nn.Linear(self.pred_len, 1)
+            self.std_linear = nn.Linear(self.pred_len, 1)
         # !test! compress
         # self.linear = nn.Linear(self.pred_len, 1)
         
@@ -122,6 +125,10 @@ class Model(nn.Module):
         if self.configs.prob ==1:
             x = self.quantile_linear(dec_out.permute(0,2,1)).reshape(-1, self.channels, self.pred_len, self.n_quantile)
             dec_out = x.permute(0,2,1,3)
+        if self.configs.pred_stats == 1:
+            x_mean = self.mean_linear(dec_out.permute(0,2,1)).permute(0,2,1)
+            x_std = self.std_linear(dec_out.permute(0,2,1)).permute(0,2,1)
+            dec_out = torch.concat([x_mean, x_std], dim=1)
         
         # dec_out = self.linear(dec_out.permute(0,2,1)).permute(0,2,1)
         return dec_out

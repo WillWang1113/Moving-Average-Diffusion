@@ -1,28 +1,38 @@
 import sys
+from matplotlib import pyplot as plt
 import torch
 import tqdm
 import os
+from src.utils.filters import get_factors
 from src.utils.filters import MovingAvgTime, MovingAvgFreq
 
 thismodule = sys.modules[__name__]
 
 
-def get_schedule(noise_name, n_steps, data_name=None,train_dl=None, check_pth=None):
+def get_schedule(noise_name, n_steps, **kwargs):
     if noise_name != "std":
         assert noise_name in ["linear", "cosine", "zero", "freqresp"]
         fn = getattr(thismodule, noise_name + "_schedule")
         return fn(n_steps)
 
     else:
-        assert (check_pth is not None) and (train_dl is not None)
-        return std_schedule(data_name, train_dl, check_pth)
+        assert (kwargs.get("check_pth") is not None) and (
+            kwargs.get("train_dl") is not None
+        )
+        return std_schedule(
+            kwargs.get("data_name"),
+            kwargs.get("train_dl"),
+            kwargs.get("check_pth"),
+            kwargs.get("factor_only"),
+            kwargs.get("stride_equal_to_kernel_size"),
+        )
 
 
 def linear_schedule(n_steps, min_beta=1e-4, max_beta=2e-2):
     betas = torch.linspace(min_beta, max_beta, n_steps)
     alphas = 1 - betas
     alpha_bars = torch.cumprod(alphas, dim=0)
-    
+
     return {
         "alpha_bars": alpha_bars.float(),
         "beta_bars": None,
@@ -30,6 +40,7 @@ def linear_schedule(n_steps, min_beta=1e-4, max_beta=2e-2):
         "betas": betas.float(),
     }
     # return alpha_bars, beta_bars, alphas, betas
+
 
 # def linear_schedule(n_steps, min_beta=1e-4, max_beta=2e-2):
 #     beta_bars = torch.linspace(min_beta, max_beta, n_steps)
@@ -87,11 +98,20 @@ def zero_schedule(n_steps):
     }
 
 
-def std_schedule(data_name, train_dl, check_pth):
+def std_schedule(
+    data_name,
+    train_dl,
+    check_pth,
+    factor_only=False,
+    stride_equal_to_kernel_size=True,
+):
     batch = next(iter(train_dl))
     seq_length = batch["future_data"].shape[1]
 
-    file_name = os.path.join(check_pth, f"norm_stdratio_{data_name}_{seq_length}.pt")
+    file_name = os.path.join(
+        check_pth,
+        f"stdschedule_norm_FO_{factor_only}_SETKS_{stride_equal_to_kernel_size}.pt",
+    )
     exist = os.path.exists(file_name)
     if exist:
         print("Use pre-computed schedule!")
@@ -114,13 +134,17 @@ def std_schedule(data_name, train_dl, check_pth):
             mean = torch.mean(x, dim=1, keepdim=True)
             stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-6)
             x_norm = (x - mean) / stdev
-            
-            
             orig_std = 1
-            
+            kernel_list = (
+                get_factors(seq_length)
+                if factor_only
+                else list(range(2, seq_length + 1))
+            )
             step_ratios = []
-            for j in range(2, seq_length + 1):
-                mat = MovingAvgTime(j, seq_length=seq_length)
+
+            for j in kernel_list:
+                stride = j if stride_equal_to_kernel_size else 1
+                mat = MovingAvgTime(j, seq_length=seq_length, stride=stride)
                 x_avg_norm = mat(x_norm)
                 std_avg = torch.sqrt(
                     torch.var(x_avg_norm, dim=1, keepdim=True, unbiased=False) + 1e-5

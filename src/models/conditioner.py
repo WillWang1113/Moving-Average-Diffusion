@@ -182,13 +182,8 @@ class MLPStatsConditioner(nn.Module):
         self.mean_dec = torch.nn.Linear(target_seq_length, 1)
         self.std_dec = torch.nn.Linear(target_seq_length, 1)
 
-        # self.norm = norm
         self.seq_channels = seq_channels
 
-        # self.unembedder = nn.Linear(latent_dim, target_seq_length)
-        # if norm:
-        #     self.mu_net = nn.Linear(latent_dim, 1 * seq_channels)
-        #     self.std_net = nn.Linear(latent_dim, 1 * seq_channels)
 
     def forward(self, observed_data, future_features=None, **kwargs):
         if self.norm:
@@ -205,16 +200,8 @@ class MLPStatsConditioner(nn.Module):
             y_pred_denorm = y_pred
         mean_pred = self.mean_dec(y_pred_denorm.permute(0, 2, 1)).permute(0, 2, 1)
         std_pred = self.std_dec(y_pred_denorm.permute(0, 2, 1)).permute(0, 2, 1)
-        # if self.norm:
-        #     mu = self.mu_net(out).reshape((-1, 1, self.seq_channels))
-        #     std = self.std_net(out).reshape((-1, 1, self.seq_channels))
-        # else:
-        #     mu, std = (
-        #         torch.zeros((x.shape[0], 1, x.shape[-1]), device=x.device),
-        #         torch.ones((x.shape[0], 1, x.shape[-1]), device=x.device),
-        #     )
+
         return {"latents": latents, "mean_pred": mean_pred, "std_pred": std_pred}
-        return latents, mean_pred, std_pred
 
 class NoNormMLPConditioner(nn.Module):
     def __init__(

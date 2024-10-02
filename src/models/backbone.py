@@ -257,7 +257,7 @@ class FreqMLPBackbone(nn.Module):
             
         self.con_pred = nn.Linear(d_model, seq_length)
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: dict = None):
         c = condition['latents']
         
         # # ! for test
@@ -293,78 +293,6 @@ class FreqMLPBackbone(nn.Module):
         x = torch.fft.irfft(x, dim=1, norm='ortho')
         
         return x
-
-# class FreqMLPBackbone(nn.Module):
-#     """
-#     ## MLP backbone
-#     """
-
-#     def __init__(
-#         self,
-#         seq_channels: int,
-#         seq_length: int,
-#         d_model: int,
-#         d_mlp: int,
-#         latent_dim: int,
-#         n_layers: int = 3,
-#         norm: bool = False,
-#         dropout: float = 0.0,
-#         **kwargs,
-#     ) -> None:
-#         """
-#         * `seq_channels` is the number of channels in the time series. $1$ for uni-variable.
-#         * `seq_length` is the number of timesteps in the time series.
-#         * `hidden_size` is the hidden size
-#         * `n_layers` is the number of MLP
-#         """
-#         super().__init__()
-
-#         self.embedder = nn.Linear(
-#             seq_channels * (seq_length // 2 + 1), d_model, dtype=torch.cfloat
-#         )
-#         self.unembedder = nn.Linear(
-#             d_model, seq_channels * (seq_length // 2 + 1), dtype=torch.cfloat
-#         )
-#         self.pe1 = SinusoidalPosEmb(d_model)
-#         self.pe2 = SinusoidalPosEmb(d_model)
-#         self.net = nn.ModuleList(  # type: ignore
-#             [
-#                 CMLP(
-#                     in_channels=d_model,
-#                     hidden_channels=[d_mlp, d_model],
-#                     dropout=dropout,
-#                 )
-#                 for _ in range(n_layers)
-#             ]
-#         )
-#         self.seq_channels = seq_channels
-#         self.seq_length = seq_length
-#         if d_model != latent_dim:
-#             self.con_linear = nn.Linear(latent_dim, d_model, dtype=torch.cfloat)
-#         else:
-#             self.con_linear = nn.Identity()
-#         # self.sparse = CSoftshrink()
-#         # self.relu = CRELU()
-
-#     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
-#         x = self.embedder(x.flatten(1))
-#         t_re, t_im = self.pe1(t), self.pe2(t)
-#         t = torch.view_as_complex(torch.stack([t_re, t_im], dim=-1))
-#         c = self.con_linear(condition)
-#         c = c + t
-#         bias = x
-#         x = x * c
-#         # x = self.pe(x, t, use_time_axis=False) + c
-#         for layer in self.net:
-#             x = layer(x) * 0.02
-
-#         x = x + bias
-#         # x = self.sparse(x)
-#         x = self.unembedder(x).reshape(
-#             (-1, (self.seq_length // 2 + 1), self.seq_channels)
-#         )
-#         return x
-
 
 
 class CIMLPBackbone(nn.Module):

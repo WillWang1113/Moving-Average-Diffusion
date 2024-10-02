@@ -30,6 +30,8 @@ def data_provider(args, flag):
     shuffle_flag = False if flag == "test" else True
     drop_last = False
     batch_size = args.batch_size
+    if flag in ['test', 'val'] :
+        batch_size = max(batch_size, 128)
     # freq = args.freq
 
     data_set = Data(

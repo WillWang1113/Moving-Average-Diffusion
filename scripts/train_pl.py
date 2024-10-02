@@ -26,7 +26,7 @@ def prepare_train(model_config, data_config, args, n):
         root_pth,
         f"{args['data_config']}_{data_config['pred_len']}_{data_config['features']}",
     )
-    save_folder = os.path.join(data_folder, args["model_config"])
+    save_folder = os.path.join(data_folder, args["model_config"]+f"_bs{data_config['batch_size']}")
     os.makedirs(save_folder, exist_ok=True)
     with open(os.path.join(save_folder, "config.json"), "w") as w:
         json.dump(model_config, w, indent=2)
@@ -77,6 +77,8 @@ def prepare_train(model_config, data_config, args, n):
         data_name=args["data_config"],
         train_dl=train_dl,
         check_pth=data_folder,
+        factor_only=model_config["diff_config"]['factor_only'],
+        stride_equal_to_kernel_size=model_config["diff_config"]['stride_equal_to_kernel_size']
     )
     return model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl
 
@@ -87,7 +89,6 @@ def main(args, n):
         open(f'configs/dataset/{args["data_config"]}.yaml', "r")
     )
     data_config = exp_parser(data_config, args)
-    # data_fn = getattr(dataset, data_config.pop("data_fn"))
 
     model_config = yaml.safe_load(
         open(f'configs/model/{args["model_config"]}.yaml', "r")
@@ -98,7 +99,6 @@ def main(args, n):
         prepare_train(model_config, data_config, args, n)
     )
     # ! MUST SETUP SEED AFTER prepare_train
-    # setup_seed(n)
     seed_everything(n, workers=True)
     diff = df(
         backbone_config=model_config["bb_config"],
@@ -115,7 +115,6 @@ def main(args, n):
         patience=model_config["train_config"]["early_stop"],
     )
     mc = ModelCheckpoint(monitor="val_loss", dirpath=save_folder, save_top_k=1)
-    # return 0
     # TODO:
     trainer = Trainer(
         max_epochs=model_config["train_config"]["epochs"],
@@ -159,6 +158,7 @@ if __name__ == "__main__":
     # Define overrides on dataset
     parser.add_argument("--pred_len", type=int)
     parser.add_argument("--seq_len", type=int)
+    parser.add_argument("--batch_size", type=int)
     args = parser.parse_args()
     for i in range(args.num_train):
         main(vars(args), i)

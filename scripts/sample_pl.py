@@ -20,37 +20,57 @@ logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNIN
 
 
 def main(args):
+    seed_everything(9)
+
+    # load configs
     root_path = os.path.join(
         args.save_dir, f"{args.dataset}_{args.pred_len}_{args.task}"
     )
-    # print("Using: ", device)
-    seed_everything(9)
     seq_length = args.pred_len
     exp_path = os.path.join(root_path, args.model_name)
+    exp_config = os.path.join(exp_path, "config.json")
+    exp_config = json.load(open(exp_config, "rb"))
+    model_name = exp_config["diff_config"]["name"]
+    factor_only = exp_config["diff_config"]["factor_only"]
+    stride_equal_to_kernel_size = exp_config["diff_config"][
+        "stride_equal_to_kernel_size"
+    ]
+    model_class = getattr(models, model_name)
+    sample_steps = None
 
-    if args.fast_sample:
-        factors = [i for i in range(2, seq_length + 1)]
-        kernel_size = get_factors(seq_length) + [seq_length]
-
-        # rest_ks = [x for x in factors if x not in kernel_size]
-        # extend_ks = random.sample(rest_ks, 50 - len(kernel_size))
-        # kernel_size.extend(extend_ks)
-        # kernel_size.sort()
-
-        sample_steps = [factors.index(i) for i in kernel_size]
+    if factor_only:
+        kernel_size = get_factors(seq_length)
         if args.start_ks is not None:
-            start_T = factors.index(args.start_ks)
-            if start_T in sample_steps:
-                sample_steps = sample_steps[: sample_steps.index(start_T)]
-            else:
-                sample_steps += [start_T]
-        sample_steps.reverse()
+            sample_steps = list(range(kernel_size.index(args.start_ks) + 1))
+
     else:
-        kernel_size = [i for i in range(2, seq_length + 1)]
-        sample_steps = None
-        if args.start_ks is not None:
-            start_T = kernel_size.index(args.start_ks)
-            sample_steps = list(range(start_T + 1))
+        kernel_size = list(range(2, seq_length + 1))
+        # if args.start_ks is not None:
+        #     sample_steps = list(range(kernel_size.index(args.start_ks) + 1))
+
+        if args.fast_sample:
+            factors = get_factors(seq_length)
+
+            # rest_ks = [x for x in factors if x not in kernel_size]
+            # extend_ks = random.sample(rest_ks, 50 - len(kernel_size))
+            # kernel_size.extend(extend_ks)
+            # kernel_size.sort()
+
+            sample_steps = [kernel_size.index(i) for i in factors]
+            if args.start_ks is not None:
+                start_T = kernel_size.index(args.start_ks)
+                if start_T in sample_steps:
+                    sample_steps = sample_steps[: sample_steps.index(start_T)]
+                else:
+                    sample_steps += [start_T]
+            sample_steps.reverse()
+        else:
+            if args.start_ks is not None:
+                sample_steps = list(range(kernel_size.index(args.start_ks) + 1))
+
+    print("factor_only:\t", factor_only)
+    print("stride=ks:\t", stride_equal_to_kernel_size)
+    print("sample_steps:\t", sample_steps)
 
     kernel_size.sort()
     kernel_size.reverse()
@@ -63,9 +83,7 @@ def main(args):
         devices=[args.gpu], enable_progress_bar=False, fast_dev_run=args.smoke_test
     )
     avg_m = []
-    exp_config = os.path.join(exp_path, "config.json")
-    model_name = json.load(open(exp_config, "rb"))["diff_config"]["name"]
-    model_class = getattr(models, model_name)
+
     if args.init_model is not None:
         with open(f"checkpoints/{args.init_model}/args.txt", "r") as f:
             model_args = json.load(f)
@@ -81,7 +99,9 @@ def main(args):
         read_d = os.path.join(exp_path, f"best_model_path_{i}.pt")
 
         best_model_path = torch.load(read_d)
-        diff = model_class.load_from_checkpoint(best_model_path, map_location=f'cuda:{args.gpu}')
+        diff = model_class.load_from_checkpoint(
+            best_model_path, map_location=f"cuda:{args.gpu}"
+        )
 
         # FOR DIFFUSIONS
         if args.deterministic:
@@ -111,6 +131,13 @@ def main(args):
         m, y_pred_q, y_pred_point = calculate_metrics(y_pred, y_real)
         print(m)
         avg_m.append(m)
+        out_name = [
+            f"initmodel_startks{args.start_ks}" if args.init_model else "",
+            "fast" if args.fast_sample else "",
+            "dtm" if args.deterministic else "",
+            "multi" if args.collect_all else "",
+        ]
+        out_name = "_".join(out_name)
         if i in [0, "t"]:
             print("plotting")
             plot_fcst(
@@ -120,36 +147,21 @@ def main(args):
                 kernel_size=kernel_size,
                 save_name=os.path.join(
                     exp_path,
-                    f"{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}.png",
+                    f"{out_name}.png",
                 ),
-                # save_name=f"assets/{args.dataset}_{args.pred_len}_{args.model_name}_{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}{d.split('/')[-1]}.png",
             )
         if args.smoke_test:
             break
     avg_m = np.array(avg_m)
-    np.save(
-        os.path.join(
-            exp_path,
-            f"{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}.npy",
-        ),
-        avg_m,
-    )
     print(avg_m.mean(axis=0))
-    # print(avg_m)
-    # df = pd.DataFrame(
-    #     avg_m.mean(axis=0, keepdims=False if args.collect_all else True),
-    #     columns=["MAE", "MSE", "CRPS"],
-    #     # columns=["RMSE", "MAE", "CRPS", "MPBL"],
-    # )
-    # print(avg_m.measn(axis=0, keepdims=False if args.collect_all else True))
-    # # df["method"] = d.split("/")[-1]
-    # df["granularity"] = kernel_size if args.collect_all else 1
-    # df.to_csv(
-    #     os.path.join(
-    #         exp_path,
-    #         f"{'fast_' if args.fast_sample else ''}{'dtm_' if args.deterministic else ''}{'multi_' if args.collect_all else ''}.csv",
-    #     )
-    # )
+    if args.num_train == 5:
+        np.save(
+            os.path.join(
+                exp_path,
+                f"{out_name}.npy",
+            ),
+            avg_m,
+        )
 
 
 if __name__ == "__main__":

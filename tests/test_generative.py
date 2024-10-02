@@ -71,17 +71,24 @@ if __name__ == "__main__":
     # SAVE METRICS
     ds = {
         "ECL": "electricity",
-        "ETTh1": "etth1",
+        # "ETTh1": "etth1",
         "ETTh2": "etth2",
-        "ETTm1": "ettm1",
+        # "ETTm1": "ettm1",
         "ETTm2": "ettm2",
         "Exchange": "exchange_rate",
-        "TrafficL": "traffic",
-        "Weather": "weather",
+        "traffic": "traffic",
+        "weather": "weather",
         # "MFRED":"mfred"
     }
+    bs = 256
+    # base_model_name = "MADtime_pl_Full_SETKS_FreqDoi"
+    # base_model_name = "MADtime_pl_Full_SETKS"
+    base_model_name = "MADtime_pl_FactOnly_FreqDoi"
 
-    model_name = "MADtime_pl_doublenorm_FreqDenoise"
+    # model_name = f"MADtime_pl_Full_SETKS_bs{bs}"
+
+    # model_name = f"MADtime_pl_FactOnly_FreqDoi_bs{bs}"
+    # model_name = base_model_name + f'_bs{bs}'
     # model_name = "MADfreq_pl_doublenorm_zerodp"
     # pred_len = [96]
     # pred_len = [96, 192]
@@ -94,19 +101,25 @@ if __name__ == "__main__":
     for d in ds:
         real_d = ds[d]
         ds_df = []
+        model_name = (
+            base_model_name + "_bs256"
+            if d in ["ETTm2", "weather"]
+            else base_model_name + "_bs64"
+        )
         for pl in pred_len:
             result_path = os.path.join(
                 save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.npy"
             )
+
             # result_path = os.path.join(
             #     save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.csv"
             # )
             results = np.load(result_path)
-            df = pd.DataFrame(results, columns=['MAE', 'MSE', 'CRPS'])
+            df = pd.DataFrame(results, columns=["MAE", "MSE", "CRPS"])
             df = df.drop(columns=["MAE"])
             df_mean = df.mean()
             df_mean["method"] = model_name
-            df_mean['pred_len'] = pl
+            df_mean["pred_len"] = pl
             df_mean = pd.DataFrame(df_mean).T
             # df_mean = df_mean.set_index("method")
             ds_df.append(df_mean)
@@ -116,11 +129,10 @@ if __name__ == "__main__":
         ds_df["dataset"] = d
         # ds_df = ds_df.reset_index()
         ds_df = ds_df.set_index(["dataset", "pred_len"])
-        print(ds_df)
         all_df.append(ds_df)
     all_df = pd.concat(all_df)
     print(all_df)
-    all_df.to_csv(f"assets/{model_name}.csv")
+    all_df.to_csv(f"assets/best_{base_model_name}.csv")
 
     # all_bench_df = pd.read_csv(
     #     '/mnt/ExtraDisk/wcx/research/benchmarks/bench_result.csv',

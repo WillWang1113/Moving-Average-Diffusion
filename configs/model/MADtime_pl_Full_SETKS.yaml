@@ -1,8 +1,8 @@
 bb_config:
-  name: FreqMLPBackbone
+  name: MLPBackbone
   d_model: 128
-  d_mlp: 512
-  n_layers: 3
+  d_mlp: 512 # original 512
+  n_layers: 3 # original 3
   dropout: 0.1
 
 cn_config:
@@ -17,6 +17,8 @@ diff_config:
   norm: on
   pred_diff: off
   freq: off
+  factor_only: off
+  stride_equal_to_kernel_size: on
 
 train_config:
   epochs: 100

@@ -1,22 +1,15 @@
 bb_config:
   name: MLPBackbone
-  # input_seq_length: 96
-  # name: MLPBackbone
   d_model: 128
   d_mlp: 512
-  # hidden_size: 128
   n_layers: 3
-  # patch_size: 8
-  # num_heads: 8
   dropout: 0.1
-  # bias: False
-  # obs_seq_length: 96
 
 cn_config:
   name: MLPStatsConditioner
-  # name: IdentityConditioner
   hidden_size: 256
   latent_dim: 128
+  norm: on
 
 diff_config:
   name: MAD
@@ -24,6 +17,8 @@ diff_config:
   norm: on
   pred_diff: off
   freq: off
+  factor_only: off
+  stride_equal_to_kernel_size: off
 
 train_config:
   epochs: 100
