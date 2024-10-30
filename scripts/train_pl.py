@@ -115,7 +115,6 @@ def main(args, n):
         patience=model_config["train_config"]["early_stop"],
     )
     mc = ModelCheckpoint(monitor="val_loss", dirpath=save_folder, save_top_k=1)
-    # TODO:
     trainer = Trainer(
         max_epochs=model_config["train_config"]["epochs"],
         deterministic=True,

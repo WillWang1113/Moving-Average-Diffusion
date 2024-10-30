@@ -1,6 +1,7 @@
 from typing import Dict
 
 from matplotlib import pyplot as plt
+import numpy as np
 import torch
 import torch.nn.functional as F
 import lightning as L
@@ -27,8 +28,7 @@ class MAD(L.LightningModule):
         pred_diff=False,
         lr=2e-4,
         alpha=1e-5,
-        p_uncond=0.,
-        w_cond=0.,
+        p_uncond=0.0,
         freq=False,
         factor_only=False,
         stride_equal_to_kernel_size=False,
@@ -43,7 +43,6 @@ class MAD(L.LightningModule):
         self.alpha = alpha
         self.freq = freq
         self.p_uncond = p_uncond
-        self.w_cond = w_cond
         self.loss_fn = complex_mse_loss if freq else F.mse_loss
 
         # config diffusion steps
@@ -106,7 +105,7 @@ class MAD(L.LightningModule):
         self.log("val_loss", loss, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
-    def predict_step(self, batch):
+    def predict_step(self, batch, batch_idx):
         assert self._sample_ready
         x_real = batch.pop("future_data")
         x = self._init_noise(x_real, batch)
@@ -119,7 +118,6 @@ class MAD(L.LightningModule):
             x = torch.fft.rfft(x, dim=1, norm="ortho")
 
         c = self._encode_condition(batch)
-        # print(torch.nn.functional.mse_loss(c['mean_pred'], x_real.mean(dim=1, keepdim=True)))
 
         # align shape, repeat conditions
         for k in c:
@@ -144,8 +142,46 @@ class MAD(L.LightningModule):
         # std = std.repeat(self.n_sample, 1, 1)
 
         mu = c["mean_pred"] if self.norm else 0.0
-        std = c["std_pred"] if self.norm else 1.0
+        std = c["std_pred"].exp() if self.norm else 1.0
+        if self.norm:
+            if self.init_model is not None:
+                mu = self.init_model_mean.repeat(
+                    self.n_sample,
+                    *[1 for _ in range(self.init_model_mean.ndim - 1)],
+                )
+                std = self.init_model_std.repeat(
+                    self.n_sample,
+                    *[1 for _ in range(self.init_model_std.ndim - 1)],
+                )
+            else:
+                mu, std = c["mean_pred"], c["std_pred"].exp()
+        else:
+            mu, std = 0.0, 1.0
+
         out_x = x * std + mu
+
+        # fig, ax = plt.subplots(3, 3)
+        # ax = ax.flatten()
+        # x_plot, (_, _) = self._normalize(x_real)
+        # for i in range(len(ax)):
+        #     choose = np.random.randint(0, x_real.shape[0])
+        #     # ax[i].plot(
+        #     #     out_x[:3, choose].squeeze().T.cpu(),
+        #     # )
+        #     ax[i].plot(
+        #         x.reshape(
+        #             self.n_sample,
+        #             x_real.shape[0],
+        #             x.shape[1],
+        #             x_real.shape[2],
+        #         )[:3, choose]
+        #         .squeeze()
+        #         .T.cpu()
+        #     )
+        #     ax[i].plot(x_plot[choose].flatten().cpu())
+        #     # ax[i].plot(x_real[choose].flatten().cpu())
+        # fig.savefig(f"assets/uncond_norm_{batch_idx}.png")
+        # plt.close(fig)
 
         out_x = out_x.reshape(
             self.n_sample,
@@ -153,6 +189,7 @@ class MAD(L.LightningModule):
             x.shape[1],
             x_real.shape[2],
         )
+
         return out_x
 
     def _sample_loop(self, x: torch.Tensor, c: Dict):
@@ -161,15 +198,52 @@ class MAD(L.LightningModule):
             t = self.sample_Ts[i]
             prev_t = None if t == 0 else self.sample_Ts[i + 1]
             t_tensor = torch.tensor(t, device=x.device).expand(x.shape[0])
+            # if t == 2:
+            #     x_plot,(_,_) = self._normalize(x_real)
+            #     loss = F.mse_loss(
+            #         x.reshape(self.n_sample, -1, self.seq_length, 1).mean(dim=0), x_plot
+            #     )
+            #     print(loss)
 
             # fig, ax = plt.subplots()
-            # ax.plot(x.reshape(self.n_sample, -1, self.seq_length, 1)[0, 0].flatten().cpu(), label='x_t')
-            # pred x_0
-            x_hat = self.backbone(x, t_tensor, c)
-            if self.pred_diff:
-                x_hat = x_hat + x
             # ax.plot(
-                # x_hat.reshape(self.n_sample, -1, self.seq_length, 1)[0, 0].flatten().cpu(), label='\hat x_0'
+            #     x.reshape(self.n_sample, -1, self.seq_length, 1)[0, 0].flatten().cpu(),
+            #     label="x_t",
+            # )
+
+            # pred x_0, conditional
+            x_hat_cond = self.backbone(x, t_tensor, c)
+            if self.pred_diff:
+                x_hat_cond = x_hat_cond + x
+
+            # ax.plot(
+            #     x_hat_cond.reshape(self.n_sample, -1, self.seq_length, 1)[0, 0]
+            #     .flatten()
+            #     .cpu(),
+            #     label="\hat x_cond_0",
+            # )
+            # pred x_0, unconditional
+            x_hat_uncond = self.backbone(
+                x, t_tensor, {k: torch.zeros_like(c[k]) for k in c}
+            )
+            if self.pred_diff:
+                x_hat_uncond = x_hat_uncond + x
+
+            # ax.plot(
+            #     x_hat_uncond.reshape(self.n_sample, -1, self.seq_length, 1)[0, 0]
+            #     .flatten()
+            #     .cpu(),
+            #     label="\hat x_uncond_0",
+            # )
+
+            # mixing
+            x_hat = self.w_cond * x_hat_cond + (1 - self.w_cond) * x_hat_uncond
+
+            # ax.plot(
+            #     x_hat.reshape(self.n_sample, -1, self.seq_length, 1)[0, 0]
+            #     .flatten()
+            #     .cpu(),
+            #     label="\hat x_0",
             # )
 
             # x_{t-1}
@@ -184,24 +258,46 @@ class MAD(L.LightningModule):
 
     def _get_loss(self, x, condition: dict = None, x_mean=None, x_std=None):
         batch_size = x.shape[0]
+
         # sample t
         t = torch.randint(0, self.T, (batch_size,)).to(x.device)
+
         # corrupt data
         x_noisy = self.degrade(x, t)
+
         # eps_theta
         c = self._encode_condition(condition)
+
+        # unconditional mask
+        mask = torch.rand((batch_size,)).to(x.device) > self.p_uncond
+        for k in c:
+            c[k] = c[k] * mask.view(
+                -1,
+                *[1 for _ in range(c[k].ndim - 1)],
+            )
+
         x_hat = self.backbone(x_noisy, t, c)
         if self.pred_diff:
             x_hat = x_hat + x_noisy
 
         # diffusion loss
         loss = self.loss_fn(x_hat, x)
+        # print('original loss')
+        # print(loss)
 
         # regularization
         if x_mean is not None:
             loss += F.mse_loss(c["mean_pred"], x_mean)
+        # print('add mean loss')
+        # print(loss)
+
+        # TODO: scale too small
         if x_std is not None:
-            loss += F.mse_loss(c["std_pred"], x_std)
+            # optimizing log std to stablize
+            # loss += F.mse_loss(c["std_pred"], x_std)
+            loss += F.mse_loss(c["std_pred"], torch.log(x_std))
+        # print('add std loss')
+        # print(loss)
 
         return loss
 
@@ -241,10 +337,16 @@ class MAD(L.LightningModule):
                     ).permute(0, 2, 1)
 
                 if self.norm:
-                    noise, _ = self._normalize(noise)
+                    noise, (init_model_mean, init_model_std) = self._normalize(noise)
+                    self.init_model_mean = init_model_mean
+                    self.init_model_std = init_model_std
                 assert noise.shape == x.shape
 
             # fig, ax = plt.subplots()
+            # x_plot, (_,_) = self._normalize(x)
+            # print(F.mse_loss(noise, x_plot))
+            # ax.plot(x_plot[0].flatten().cpu())
+            # ax.plot(noise[0].flatten().cpu())
             # ax.plot(noise[0].flatten().cpu())
             noise = (
                 noise
@@ -277,12 +379,14 @@ class MAD(L.LightningModule):
     def config_sampling(
         self,
         n_sample: int = 1,
+        w_cond: float = 1,
         sigmas: torch.Tensor = None,
         sample_steps=None,
         init_model: torch.nn.Module = None,
     ):
         self.init_model = init_model
         self.n_sample = n_sample
+        self.w_cond = w_cond
         self.sample_Ts = list(range(self.T)) if sample_steps is None else sample_steps
         self.sample_Ts.sort(reverse=True)
         sigmas = torch.zeros_like(self.betas) if sigmas is None else sigmas

@@ -80,10 +80,11 @@ if __name__ == "__main__":
         "weather": "weather",
         # "MFRED":"mfred"
     }
-    bs = 256
+    bs = 128
     # base_model_name = "MADtime_pl_Full_SETKS_FreqDoi"
     # base_model_name = "MADtime_pl_Full_SETKS"
-    base_model_name = "MADtime_pl_FactOnly_FreqDoi"
+    base_model_name = "MADtime_pl_FactOnly_SETKS_FreqDoi_CFG_puncond0.8"
+    # base_model_name = "MADtime_pl_FactOnly_FreqDoi"
 
     # model_name = f"MADtime_pl_Full_SETKS_bs{bs}"
 
@@ -101,18 +102,24 @@ if __name__ == "__main__":
     for d in ds:
         real_d = ds[d]
         ds_df = []
-        model_name = (
-            base_model_name + "_bs256"
-            if d in ["ETTm2", "weather"]
-            else base_model_name + "_bs64"
-        )
-        for pl in pred_len:
-            result_path = os.path.join(
-                save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.npy"
-            )
+        model_name = base_model_name + f"_bs{bs}"
 
+        # hparam best
+        # model_name = (
+        #     base_model_name + "_bs256"
+        #     if d in ["ETTm2", "weather"]
+        #     else base_model_name + "_bs64"
+        # )
+        for pl in pred_len:
             # result_path = os.path.join(
-            #     save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.csv"
+            #     save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.npy"
+            # )
+
+            result_path = os.path.join(
+                save_dir, f"{real_d}_{pl}_S", model_name, "initmodel_startks4__dtm_0.0_.npy"
+            )
+            # result_path = os.path.join(
+            #     save_dir, f"{real_d}_{pl}_S", model_name, "__dtm_1.0_.npy"
             # )
             results = np.load(result_path)
             df = pd.DataFrame(results, columns=["MAE", "MSE", "CRPS"])
@@ -132,7 +139,8 @@ if __name__ == "__main__":
         all_df.append(ds_df)
     all_df = pd.concat(all_df)
     print(all_df)
-    all_df.to_csv(f"assets/best_{base_model_name}.csv")
+    all_df.to_csv(f"assets/{model_name}_refine.csv")
+    # all_df.to_csv(f"assets/{model_name}_fcst.csv")
 
     # all_bench_df = pd.read_csv(
     #     '/mnt/ExtraDisk/wcx/research/benchmarks/bench_result.csv',

@@ -112,6 +112,7 @@ def main(args):
         # FOR MAD
         diff.config_sampling(
             args.n_sample,
+            w_cond=args.w_cond,
             sigmas=sigmas,
             sample_steps=sample_steps,
             init_model=init_model,
@@ -135,6 +136,7 @@ def main(args):
             f"initmodel_startks{args.start_ks}" if args.init_model else "",
             "fast" if args.fast_sample else "",
             "dtm" if args.deterministic else "",
+            f"{round(args.w_cond, 1)}" if args.model_name.__contains__('CFG') else "",
             "multi" if args.collect_all else "",
         ]
         out_name = "_".join(out_name)
@@ -183,6 +185,7 @@ if __name__ == "__main__":
     parser.add_argument("--smoke_test", action="store_true")
     parser.add_argument("--collect_all", action="store_true")
     parser.add_argument("--n_sample", type=int, default=100)
+    parser.add_argument("--w_cond", type=float, default=1.0)
     parser.add_argument("--start_ks", type=int, default=None)
     parser.add_argument("--init_model", type=str, default=None)
     args = parser.parse_args()
