@@ -6,67 +6,12 @@ import numpy as np
 from src.utils.train import setup_seed
 
 # root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
-root_pth = "/home/user/data/FrequencyDiffusion/savings"
+root_pth = "/home/user/data/MAD/savings"
+# root_pth = "/home/user/data/FrequencyDiffusion/savings"
 setup_seed()
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description="Hyperparameters config")
-    # parser.add_argument(
-    #     "-c", "--config", required=True, help="Path to the YAML configuration file."
-    # )
-    # parser.add_argument("--dataset", type=str, default="mfred")
-    # parser.add_argument("--smoke_test", action="store_true")
-    # parser.add_argument("--gpu", type=int, default=0)
-    # parser.add_argument("--num_train", type=int, default=5)
-    # # Define overrides with dot notation
-    # parser.add_argument("--diff_config.name", type=str)
-    # parser.add_argument("--diff_config.norm", action="store_true", default=None)
-    # parser.add_argument("--diff_config.pred_diff", action="store_true", default=None)
-    # parser.add_argument("--diff_config.noise_kw.name", type=str)
-    # parser.add_argument("--diff_config.noise_kw.min_beta", type=float)
-    # parser.add_argument("--diff_config.noise_kw.max_beta", type=float)
-    # parser.add_argument("--bb_config.name", type=str)
-    # args = parser.parse_args()
-    # for i in range(args.num_train):
-    #     # args = vars(args)
-    #     main(vars(args), i)
-
-    # # SAVE METRICS
-    # ds = [
-    #     "ETTh1",
-    #     "ETTh2",
-    #     "ETTm1",
-    #     "ETTm2",
-    #     "ECL",
-    #     "Exchange",
-    #     "TrafficL",
-    #     "Weather",
-    # ]
-    # pred_len = [96, 192, 336, 720]
-    # save_dir = "/mnt/ExtraDisk/wcx/research/benchmarks"
-    # all_df = []
-    # for d in ds:
-    #     ds_df = []
-    #     for pl in pred_len:
-    #         result_path = os.path.join(save_dir, f"{d}_96_{pl}_U","results.csv")
-    #         df = pd.read_csv(result_path, index_col=0)
-    #         df.index.name = 'model'
-    #         df = df.reset_index()
-    #         df = df.groupby('model').mean()
-    #         df = df.drop(columns=['MAE', 'iter'])
-    #         df = df.stack()
-    #         df = pd.DataFrame(df, columns=[pl]).transpose()
-    #         ds_df.append(df)
-    #     ds_df = pd.concat(ds_df)
-    #     ds_df.index.name = 'pred_len'
-    #     ds_df['dataset'] = d
-    #     ds_df = ds_df.reset_index()
-    #     ds_df = ds_df.set_index(['dataset','pred_len'])
-    #     all_df.append(ds_df)
-    # all_df = pd.concat(all_df)
-    # all_df.to_csv(os.path.join(save_dir, 'bench_result.csv'))
-    # # print(all_df.to_latex(float_format="{:.3f}".format))
 
     # SAVE METRICS
     ds = {
@@ -80,11 +25,19 @@ if __name__ == "__main__":
         "weather": "weather",
         # "MFRED":"mfred"
     }
-    bs = 128
+    bs = 64
     # base_model_name = "MADtime_pl_Full_SETKS_FreqDoi"
     # base_model_name = "MADtime_pl_Full_SETKS"
-    base_model_name = "MADtime_pl_FactOnly_SETKS_FreqDoi_CFG_puncond0.8"
+    # base_model_name = "MADtime_learnmean"
+    # base_model_name = "MADtime_FactOnly_SETKS_learnmean_freqdenoise_puncond0.5"
+    # base_model_name = "MADtime_FactOnly_SETKS_learnmean_freqdenoise"
+    # base_model_name = "MADtime_learnmean_freqdenoise"
+    # base_model_name = "MADtime_pl_FactOnly_SETKS_FreqDoi_CFG_puncond0.8"
     # base_model_name = "MADtime_pl_FactOnly_FreqDoi"
+    # base_model_name = "MADfreq"
+    # base_model_name = "MADfreq_FactOnly"
+    base_model_name = "MADfreq_puncond0.5"
+    # base_model_name = "MADfreq_FactOnly_puncond0.5"
 
     # model_name = f"MADtime_pl_Full_SETKS_bs{bs}"
 
@@ -116,10 +69,13 @@ if __name__ == "__main__":
             # )
 
             result_path = os.path.join(
-                save_dir, f"{real_d}_{pl}_S", model_name, "initmodel_startks4__dtm_0.0_.npy"
+                save_dir, f"{real_d}_{pl}_S", model_name, "initmodel_PatchTST_startks4__dtm__.npy"
             )
             # result_path = os.path.join(
-            #     save_dir, f"{real_d}_{pl}_S", model_name, "__dtm_1.0_.npy"
+            #     save_dir, f"{real_d}_{pl}_S", model_name, "__fast_dtm__.npy"
+            # )
+            # result_path = os.path.join(
+            #     save_dir, f"{real_d}_{pl}_S", model_name, "__dtm__.npy"
             # )
             results = np.load(result_path)
             df = pd.DataFrame(results, columns=["MAE", "MSE", "CRPS"])
@@ -139,6 +95,7 @@ if __name__ == "__main__":
         all_df.append(ds_df)
     all_df = pd.concat(all_df)
     print(all_df)
+    print(f"assets/{model_name}_refine.csv")
     all_df.to_csv(f"assets/{model_name}_refine.csv")
     # all_df.to_csv(f"assets/{model_name}_fcst.csv")
 

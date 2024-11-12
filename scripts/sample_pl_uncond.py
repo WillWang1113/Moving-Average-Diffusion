@@ -14,7 +14,7 @@ from lightning import Trainer
 from lightning.fabric import seed_everything
 from src.utils.sample import plot_fcst, temporal_avg
 from src.utils.metrics import calculate_metrics
-import src.benchmarks
+import matplotlib.pyplot as plt
 
 # torch.set_float32_matmul_precision('high')
 logging.getLogger("lightning.pytorch.accelerators.cuda").setLevel(logging.WARNING)
@@ -85,23 +85,22 @@ def main(args):
     )
     avg_m = []
 
+    if args.init_model is not None:
+        with open(f"checkpoints/{args.init_model}/args.txt", "r") as f:
+            model_args = json.load(f)
+        model_args = argparse.Namespace(**model_args)
+        init_model = Model(configs=model_args)
+        init_model.load_state_dict(
+            torch.load(f"checkpoints/{args.init_model}//checkpoint.pth")
+        )
+    else:
+        init_model = None
+
     for i in range(args.num_train):
-        # load low-res model
-        if args.init_model is not None:
-            with open(f"checkpoints/{args.init_model}_{i}/args.txt", "r") as f:
-                model_args = json.load(f)
-            model_args = argparse.Namespace(**model_args)
-            init_model_class = getattr(src.benchmarks, model_args.model)
-
-            init_model = init_model_class.Model(configs=model_args)
-            init_model.load_state_dict(
-                torch.load(f"checkpoints/{args.init_model}_{i}/checkpoint.pth")
-            )
-        else:
-            init_model = None
-
         read_d = os.path.join(exp_path, f"best_model_path_{i}.pt")
+        print(read_d)
         best_model_path = torch.load(read_d)
+        print(best_model_path)
         diff = model_class.load_from_checkpoint(
             best_model_path, map_location=f"cuda:{args.gpu}"
         )
@@ -127,47 +126,56 @@ def main(args):
         for b in test_dl:
             y_real.append(b["future_data"])
         y_real = torch.concat(y_real)
-        if args.collect_all:
-            y_pred, y_real = temporal_avg(y_pred, y_real, kernel_size, args.kind)
-        else:
-            y_pred = y_pred.cpu().numpy()
-            y_real = y_real.cpu().numpy()
-        m, y_pred_q, y_pred_point = calculate_metrics(y_pred, y_real)
-        print(m)
-        avg_m.append(m)
-        out_name = [
-            f"initmodel_{model_args.model}" if args.init_model else "",
-            f"startks{args.start_ks}" if args.init_model else "",
-            "fast" if args.fast_sample else "",
-            "dtm" if args.deterministic else "",
-            f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
-            "multi" if args.collect_all else "",
-        ]
-        out_name = "_".join(out_name)
-        if i in [0, "t"]:
-            print("plotting")
-            plot_fcst(
-                y_pred_q,
-                y_real,
-                y_pred_point=y_pred_point,
-                kernel_size=kernel_size,
-                save_name=os.path.join(
-                    exp_path,
-                    f"{out_name}.png",
-                ),
-            )
-        if args.smoke_test:
-            break
-    avg_m = np.array(avg_m)
-    print(avg_m.mean(axis=0))
-    if args.num_train == 5:
-        np.save(
-            os.path.join(
-                exp_path,
-                f"{out_name}.npy",
-            ),
-            avg_m,
-        )
+        
+        fig, axs = plt.subplots(4,4, figsize=[8,6])
+        axs = axs.flatten()
+        for n in range(len(axs)):
+            choose = np.random.randint(0, len(y_real))
+            axs[n].plot(y_pred[:,choose].squeeze().T)
+            axs[n].plot(y_real[choose].flatten())
+        fig.tight_layout()
+        fig.savefig('assets/test.png')
+        
+        # if args.collect_all:
+        #     y_pred, y_real = temporal_avg(y_pred, y_real, kernel_size, args.kind)
+        # else:
+        #     y_pred = y_pred.cpu().numpy()
+        #     y_real = y_real.cpu().numpy()
+        # m, y_pred_q, y_pred_point = calculate_metrics(y_pred, y_real)
+        # print(m)
+        # avg_m.append(m)
+        # out_name = [
+        #     f"initmodel_startks{args.start_ks}" if args.init_model else "",
+        #     "fast" if args.fast_sample else "",
+        #     "dtm" if args.deterministic else "",
+        #     f"{round(args.w_cond, 1)}" if args.model_name.__contains__('CFG') else "",
+        #     "multi" if args.collect_all else "",
+        # ]
+        # out_name = "_".join(out_name)
+        # if i in [0, "t"]:
+        #     print("plotting")
+        #     plot_fcst(
+        #         y_pred_q,
+        #         y_real,
+        #         y_pred_point=y_pred_point,
+        #         kernel_size=kernel_size,
+        #         save_name=os.path.join(
+        #             exp_path,
+        #             f"{out_name}.png",
+        #         ),
+        #     )
+        # if args.smoke_test:
+        #     break
+    # avg_m = np.array(avg_m)
+    # print(avg_m.mean(axis=0))
+    # if args.num_train == 5:
+    #     np.save(
+    #         os.path.join(
+    #             exp_path,
+    #             f"{out_name}.npy",
+    #         ),
+    #         avg_m,
+    #     )
 
 
 if __name__ == "__main__":

@@ -1,27 +1,26 @@
 bb_config:
-  name: FreqMLPBackbone
+  name: MLPBackbone
   d_model: 128
   d_mlp: 512 # original 512
   n_layers: 3 # original 3
   dropout: 0.1
-  # freq_denoise: on
+  freq_denoise: off
 
 cn_config:
-  name: MLPStatsConditioner
+  name: MLPMeanStatsConditioner
   hidden_size: 256
   latent_dim: 128
   norm: on
 
 diff_config:
-  name: CMAD
-  noise_schedule: freqresp
+  name: MADMean
+  noise_schedule: std
   norm: on
   pred_diff: off
-  freq: on
+  freq: off
   factor_only: off
   stride_equal_to_kernel_size: off
-  p_uncond: 0.5
-  T: 1000
+  p_uncond: 0.0
 
 train_config:
   epochs: 100

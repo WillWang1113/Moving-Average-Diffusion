@@ -125,7 +125,7 @@ def build_backbone(bb_config):
 
 class MLPBackbone(nn.Module):
     """
-    ## MLP backbone
+    ## MLP backbone for denoising a time-domian data
     """
 
     def __init__(
@@ -135,7 +135,7 @@ class MLPBackbone(nn.Module):
         d_model: int,
         d_mlp: int,
         # hidden_size: int,
-        latent_dim: int,
+        latent_dim: int = None,
         n_layers: int = 3,
         dropout: float = 0.1,
         freq_denoise: bool = False,
@@ -165,53 +165,84 @@ class MLPBackbone(nn.Module):
         )
         self.seq_channels = seq_channels
         self.seq_length = seq_length
-        if d_model != latent_dim:
-            self.con_linear = nn.Linear(latent_dim, d_model)
-        else:
-            self.con_linear = nn.Identity()
+        if latent_dim is not None:
+            if d_model != latent_dim:
+                self.con_linear = nn.Linear(latent_dim, d_model)
+            else:
+                self.con_linear = nn.Identity()
 
-        self.con_pred = nn.Linear(d_model, seq_length)
+            self.con_pred = nn.Linear(d_model, seq_length)
+        else:
+            pass
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
-        c = condition["latents"]
+        if condition is not None:
+            c = condition["latents"]
 
-        if self.freq_denoise:
-            x = torch.fft.rfft(x, dim=1, norm="ortho")
-            fft_len = x.shape[1]
-            x = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
+            if self.freq_denoise:
+                x = torch.fft.rfft(x, dim=1, norm="ortho")
+                fft_len = x.shape[1]
+                x = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
 
-        x = self.embedder(x.permute(0, 2, 1))
-        t = self.pe(t).unsqueeze(1)
-        c = self.con_linear(c)
-        c_pred = self.con_pred(c).permute(0, 2, 1)
+            x = self.embedder(x.permute(0, 2, 1))
+            t = self.pe(t).unsqueeze(1)
+            c = self.con_linear(c)
+            c_pred = self.con_pred(c).permute(0, 2, 1)
 
-        x = (x + t) + c
-        for layer in self.net:
-            x = x + layer(x)
-        x = self.unembedder(x).permute(0, 2, 1)
+            x = (x + t) + c
+            for layer in self.net:
+                x = x + layer(x)
+            x = self.unembedder(x).permute(0, 2, 1)
 
-        if self.freq_denoise:
-            # ! for test
-            x_re = x[:, :fft_len, :]
-            x_im = torch.concat(
-                [
-                    torch.zeros_like(x[:, [0], :]),
-                    x[:, fft_len:, :],
-                    torch.zeros_like(x[:, [0], :]),
-                ],
-                dim=1,
-            )
-            x = torch.stack([x_re, x_im], dim=-1)
-            x = torch.view_as_complex(x)
-            x = torch.fft.irfft(x, dim=1, norm="ortho")
+            if self.freq_denoise:
+                # ! for test
+                x_re = x[:, :fft_len, :]
+                x_im = torch.concat(
+                    [
+                        torch.zeros_like(x[:, [0], :]),
+                        x[:, fft_len:, :],
+                        torch.zeros_like(x[:, [0], :]),
+                    ],
+                    dim=1,
+                )
+                x = torch.stack([x_re, x_im], dim=-1)
+                x = torch.view_as_complex(x)
+                x = torch.fft.irfft(x, dim=1, norm="ortho")
 
-        x = x + c_pred
+            x = x + c_pred
+        else:
+            if self.freq_denoise:
+                x = torch.fft.rfft(x, dim=1, norm="ortho")
+                fft_len = x.shape[1]
+                x = torch.concat([x.real, x.imag[:, 1:-1, :]], dim=1)
+
+            x = self.embedder(x.permute(0, 2, 1))
+            t = self.pe(t).unsqueeze(1)
+
+            x = x + t
+            for layer in self.net:
+                x = x + layer(x)
+            x = self.unembedder(x).permute(0, 2, 1)
+
+            if self.freq_denoise:
+                x_re = x[:, :fft_len, :]
+                x_im = torch.concat(
+                    [
+                        torch.zeros_like(x[:, [0], :]),
+                        x[:, fft_len:, :],
+                        torch.zeros_like(x[:, [0], :]),
+                    ],
+                    dim=1,
+                )
+                x = torch.stack([x_re, x_im], dim=-1)
+                x = torch.view_as_complex(x)
+                x = torch.fft.irfft(x, dim=1, norm="ortho")
         return x
 
 
 class FreqMLPBackbone(nn.Module):
     """
-    ## MLP backbone for denoise in frequency domain, input data: time domain
+    ## MLP backbone for denoising a frequency-domain data
     """
 
     def __init__(
@@ -220,7 +251,7 @@ class FreqMLPBackbone(nn.Module):
         seq_length: int,
         d_model: int,
         d_mlp: int,
-        latent_dim: int,
+        latent_dim: int = None,
         n_layers: int = 3,
         dropout: float = 0.1,
         **kwargs,
@@ -234,7 +265,7 @@ class FreqMLPBackbone(nn.Module):
         super().__init__()
         rfft_len = seq_length // 2 + 1
         self.rfft_len = rfft_len
-        self.embedder = nn.Linear(rfft_len, d_model)
+        self.embedder = nn.Linear(rfft_len * 2, d_model)
         self.unembedder = nn.Linear(d_model, rfft_len * 2)
         self.pe = SinusoidalPosEmb(d_model)
         # self.pe = GaussianFourierProjection(d_model)
@@ -250,36 +281,56 @@ class FreqMLPBackbone(nn.Module):
         )
         self.seq_channels = seq_channels
         self.seq_length = seq_length
-        if d_model != latent_dim:
-            self.con_linear = nn.Linear(latent_dim, d_model)
-        else:
-            self.con_linear = nn.Identity()
+        if latent_dim is not None:
+            if d_model != latent_dim:
+                self.con_linear = nn.Linear(latent_dim, d_model)
+            else:
+                self.con_linear = nn.Identity()
 
-        self.con_pred = nn.Linear(d_model, seq_length)
+            self.con_pred = nn.Linear(d_model, rfft_len * 2)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: dict = None):
-        c = condition["latents"]
+        if condition is not None:
+            c = condition["latents"]
 
-        # concat real and imag
-        x = torch.concat([x.real, x.imag], dim=1)
+            # concat real and imag
+            x = torch.concat([x.real, x.imag], dim=1)
 
-        x = self.embedder(x.permute(0, 2, 1))
-        t = self.pe(t).unsqueeze(1)
-        c = self.con_linear(c)
-        c_pred = self.con_pred(c).permute(0, 2, 1)
+            x = self.embedder(x.permute(0, 2, 1))
+            t = self.pe(t).unsqueeze(1)
+            c = self.con_linear(c)
+            c_pred = self.con_pred(c).permute(0, 2, 1)
 
-        x = (x + t) + c
-        for layer in self.net:
-            x = x + layer(x)
-        x = self.unembedder(x).permute(0, 2, 1)
+            x = (x + t) + c
+            for layer in self.net:
+                x = x + layer(x)
+            x = self.unembedder(x).permute(0, 2, 1)
 
-        x = x + c_pred
-        
-        # back to complex tensor
-        x_re = x[:, :self.rfft_len, :]
-        x_im = x[:, self.rfft_len:, :],
-        x = torch.stack([x_re, x_im], dim=-1)
-        x = torch.view_as_complex(x)
+            x = x + c_pred
+
+            # back to complex tensor
+            x_re = x[:, : self.rfft_len, :]
+            x_im = x[:, self.rfft_len :, :]
+            x = torch.stack([x_re, x_im], dim=-1)
+            x = torch.view_as_complex(x)
+        else:
+            # concat real and imag
+            x = torch.concat([x.real, x.imag], dim=1)
+
+            x = self.embedder(x.permute(0, 2, 1))
+            t = self.pe(t).unsqueeze(1)
+
+            x = (x + t)
+            for layer in self.net:
+                x = x + layer(x)
+            x = self.unembedder(x).permute(0, 2, 1)
+
+            # back to complex tensor
+            x_re = x[:, : self.rfft_len, :]
+            x_im = x[:, self.rfft_len :, :]
+            x = torch.stack([x_re, x_im], dim=-1)
+            x = torch.view_as_complex(x)
+            
 
         return x
 

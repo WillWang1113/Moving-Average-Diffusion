@@ -58,13 +58,6 @@ def prepare_train(model_config, data_config, args, n):
 
     model_config["bb_config"]["seq_channels"] = target_seq_channels
     model_config["bb_config"]["seq_length"] = target_seq_length
-    model_config["bb_config"]["latent_dim"] = model_config["cn_config"]["latent_dim"]
-    model_config["cn_config"]["seq_channels"] = seq_channels
-    model_config["cn_config"]["seq_length"] = seq_length
-    model_config["cn_config"]["future_seq_channels"] = future_seq_channels
-    model_config["cn_config"]["future_seq_length"] = future_seq_length
-    model_config["cn_config"]["target_seq_length"] = target_seq_length
-    model_config["cn_config"]["target_seq_channels"] = target_seq_channels
     ns_name = model_config["diff_config"].pop("noise_schedule")
     n_steps = (
         target_seq_length - 1
@@ -75,9 +68,9 @@ def prepare_train(model_config, data_config, args, n):
         ns_name,
         n_steps,
         data_name=args["data_config"],
+        seq_len=target_seq_length,
         train_dl=train_dl,
         check_pth=data_folder,
-        seq_len=target_seq_length,
         factor_only=model_config["diff_config"]["factor_only"],
         stride_equal_to_kernel_size=model_config["diff_config"][
             "stride_equal_to_kernel_size"
@@ -125,7 +118,6 @@ def main(args, n):
         default_root_dir=save_folder,
         fast_dev_run=args["smoke_test"],
         enable_progress_bar=args["smoke_test"],
-        check_val_every_n_epoch=model_config["train_config"]['val_step']
         # **model_config["train_config"],
     )
 

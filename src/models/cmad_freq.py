@@ -16,7 +16,7 @@ def complex_mse_loss(output, target):
     return F.mse_loss(output_re_im, target_re_im)
 
 
-class MAD(L.LightningModule):
+class CMAD(L.LightningModule):
     """MovingAvg Diffusion."""
 
     def __init__(
@@ -29,9 +29,10 @@ class MAD(L.LightningModule):
         lr=2e-4,
         alpha=1e-5,
         p_uncond=0.0,
-        freq=False,
-        factor_only=False,
-        stride_equal_to_kernel_size=False,
+        T=10,
+        factor_only=None,
+        stride_equal_to_kernel_size=None,
+        freq=True
     ) -> None:
         super().__init__()
         self.backbone = build_backbone(backbone_config)
@@ -40,33 +41,27 @@ class MAD(L.LightningModule):
         self.norm = norm
         self.pred_diff = pred_diff
         self.lr = lr
+        self.freq=freq
         self.alpha = alpha
-        self.freq = freq
         self.p_uncond = p_uncond
-        self.loss_fn = complex_mse_loss if freq else F.mse_loss
+        self.loss_fn = complex_mse_loss
 
         # config diffusion steps
-        self.factors = (
-            get_factors(self.seq_length)
-            if factor_only
-            else list(range(2, self.seq_length + 1))
-        )
-        if self.freq:
-            assert not stride_equal_to_kernel_size
-            degrade_class = MovingAvgFreq
-        else:
-            degrade_class = (
-                MovingAvgTime
-                if not stride_equal_to_kernel_size
-                else lambda f, sl: MovingAvgTime(f, sl, stride=f)
-            )
+        self.factors = np.linspace(1, self.seq_length, T)
 
         self.T = len(self.factors)
-        self.degrade_fn = [degrade_class(f, self.seq_length) for f in self.factors]
+        self.degrade_fn = [MovingAvgFreq(f, self.seq_length) for f in self.factors]
+        
+        fr = [df.K.diag() for df in self.degrade_fn]
+        fr = torch.stack(fr)  # [steps, seq_len//2 + 1]
+        fr = 1 - (fr.conj() * fr).real
+        fr = torch.sqrt(fr + 1e-6)
+        fr[:, 0] = torch.ones_like(fr[:, 0]) * 1e-5
+        self.register_buffer("betas", fr.float().reshape(self.T, -1))
+       
         K = torch.stack([df.K for df in self.degrade_fn])
-
+        
         self.register_buffer("K", K)
-        self.register_buffer("betas", noise_schedule["betas"].reshape(self.T, -1))
         self.save_hyperparameters()
 
     def configure_optimizers(self):

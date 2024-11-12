@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torchvision.ops import MLP
 
-from src.models.blocks import RevIN, CRELU, CMLP
+from src.models.blocks import RevIN, CRELU, CMLP, RevINMean
 from ..layers.Autoformer_EncDec import series_decomp
 from ..utils.fourier import dft
 
@@ -106,14 +106,14 @@ class RMLPStatsConditioner(nn.Module):
 
         self.latent_dim = latent_dim
         # self.embedder = nn.Linear(seq_length, hidden_size)
-
+        self.rfft_len = seq_length // 2 + 1
         self.rev = RevIN(seq_channels)
         self.input_enc = MLP(
-            in_channels=seq_length,
+            in_channels=self.rfft_len * 2,
             hidden_channels=[hidden_size, latent_dim],
         )
-        self.pred_dec = torch.nn.Linear(latent_dim, target_seq_length)
-        self.target_fft_len = target_seq_length // 2 + 1
+        self.target_rfft_len = target_seq_length // 2 + 1
+        self.pred_dec = torch.nn.Linear(latent_dim, self.target_rfft_len * 2)
         self.mean_dec = torch.nn.Linear(target_seq_length, 1)
         self.std_dec = torch.nn.Linear(target_seq_length, 1)
 
@@ -123,19 +123,12 @@ class RMLPStatsConditioner(nn.Module):
     def forward(self, observed_data, future_features=None, **kwargs):
         x_norm = self.rev(observed_data, "norm")
         x_norm = torch.fft.rfft(x_norm, dim=1, norm="ortho")
-        x_norm = torch.concat([x_norm.real, x_norm.imag[:, 1:-1, :]], dim=1)
+        x_norm = torch.concat([x_norm.real, x_norm.imag], dim=1)
         latents = self.input_enc(x_norm.permute(0, 2, 1))
 
         y_pred = self.pred_dec(latents).permute(0, 2, 1)
-        y_re = y_pred[:, : self.target_fft_len, :]
-        y_im = torch.concat(
-            [
-                torch.zeros_like(y_pred[:, [0], :]),
-                y_pred[:, self.target_fft_len :, :],
-                torch.zeros_like(y_pred[:, [0], :]),
-            ],
-            dim=1,
-        )
+        y_re = y_pred[:, : self.target_rfft_len, :]
+        y_im = y_pred[:, self.target_rfft_len :, :]
         y_pred = torch.stack([y_re, y_im], dim=-1)
         y_pred = torch.view_as_complex(y_pred)
         y_pred = torch.fft.irfft(y_pred, dim=1, norm="ortho")
@@ -202,6 +195,62 @@ class MLPStatsConditioner(nn.Module):
         std_pred = self.std_dec(y_pred_denorm.permute(0, 2, 1)).permute(0, 2, 1)
 
         return {"latents": latents, "mean_pred": mean_pred, "std_pred": std_pred}
+
+class MLPMeanStatsConditioner(nn.Module):
+    def __init__(
+        self,
+        seq_channels,
+        seq_length,
+        hidden_size,
+        latent_dim,
+        target_seq_length,
+        target_seq_channels,
+        future_seq_channels=None,
+        future_seq_length=None,
+        norm=True,
+    ) -> None:
+        super().__init__()
+        all_input_channel = seq_channels * (seq_length)
+
+        # include external features
+        if future_seq_channels is not None and future_seq_length is not None:
+            all_input_channel += future_seq_channels * future_seq_length
+
+        self.latent_dim = latent_dim
+        self.norm = norm
+        # self.embedder = nn.Linear(seq_length, hidden_size)
+        if norm:
+            self.rev = RevINMean(seq_channels)
+        self.input_enc = MLP(
+            in_channels=seq_length,
+            hidden_channels=[hidden_size, latent_dim],
+        )
+        self.pred_dec = torch.nn.Linear(latent_dim, target_seq_length)
+
+        self.mean_dec = torch.nn.Linear(target_seq_length, 1)
+        # self.std_dec = torch.nn.Linear(target_seq_length, 1)
+
+        self.seq_channels = seq_channels
+
+
+    def forward(self, observed_data, future_features=None, **kwargs):
+        if self.norm:
+            x_norm = self.rev(observed_data, "norm")
+        else:
+            x_norm = observed_data
+            
+        latents = self.input_enc(x_norm.permute(0, 2, 1))
+        y_pred = self.pred_dec(latents).permute(0, 2, 1)
+        
+        if self.norm:
+            y_pred_denorm = self.rev(y_pred, "denorm")
+        else:
+            y_pred_denorm = y_pred
+        mean_pred = self.mean_dec(y_pred_denorm.permute(0, 2, 1)).permute(0, 2, 1)
+        # std_pred = self.std_dec(y_pred_denorm.permute(0, 2, 1)).permute(0, 2, 1)
+
+        return {"latents": latents, "mean_pred": mean_pred}
+        # return {"latents": latents, "mean_pred": mean_pred, "std_pred": None}
 
 class NoNormMLPConditioner(nn.Module):
     def __init__(

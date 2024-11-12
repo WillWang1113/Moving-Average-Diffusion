@@ -15,7 +15,9 @@ class Model(nn.Module):
         """
         super(Model, self).__init__()
         self.task_name = configs.task_name
-        self.seq_len = configs.seq_len
+        self.seq_len = int((configs.seq_len - configs.ma_ks) / configs.ma_stride + 1)
+        # self.seq_len = configs.seq_len
+        # self.pred_len = int((configs.pred_len - configs.ma_ks) / configs.ma_stride + 1)
         if (
             self.task_name == "classification"
             or self.task_name == "anomaly_detection"
@@ -63,6 +65,10 @@ class Model(nn.Module):
                 self.pred_len, self.n_quantile * self.pred_len
             )
 
+        if configs.pred_stats == 1:
+            self.mean_linear = nn.Linear(self.pred_len, 1)
+            self.std_linear = nn.Linear(self.pred_len, 1)
+
         if self.task_name == "classification":
             self.projection = nn.Linear(
                 configs.enc_in * configs.seq_len, configs.num_class
@@ -96,6 +102,12 @@ class Model(nn.Module):
         return x
 
     def forecast(self, x_enc: torch.Tensor):
+        x_enc = torch.nn.functional.avg_pool1d(
+            x_enc.permute(0, 2, 1),
+            self.configs.ma_ks,
+            stride=self.configs.ma_stride,
+        ).permute(0, 2, 1)
+
         # Encoder
         x = self.encoder(x_enc)
         if self.configs.prob == 1:
@@ -103,6 +115,12 @@ class Model(nn.Module):
                 -1, self.channels, self.pred_len, self.n_quantile
             )
             x = x.permute(0, 2, 1, 3)
+
+        if self.configs.pred_stats == 1:
+            x_mean = self.mean_linear(x.permute(0, 2, 1)).permute(0, 2, 1)
+            x_std = self.std_linear(x.permute(0, 2, 1)).permute(0, 2, 1)
+            x = torch.concat([x_mean, x_std], dim=1)
+
         # return x.permute(0,2,1,3)
         return x
 
@@ -124,22 +142,20 @@ class Model(nn.Module):
         output = self.projection(output)
         return output
 
-    def forward(
-        self, observed_data, x_mark_enc=None, x_dec=None, x_mark_dec=None, mask=None
-    ):
+    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
         if (
             self.task_name == "long_term_forecast"
             or self.task_name == "short_term_forecast"
         ):
-            dec_out = self.forecast(observed_data)
+            dec_out = self.forecast(x_enc)
             return dec_out[:, -self.pred_len :, :]  # [B, L, D]
         if self.task_name == "imputation":
-            dec_out = self.imputation(observed_data)
+            dec_out = self.imputation(x_enc)
             return dec_out  # [B, L, D]
         if self.task_name == "anomaly_detection":
-            dec_out = self.anomaly_detection(observed_data)
+            dec_out = self.anomaly_detection(x_enc)
             return dec_out  # [B, L, D]
         if self.task_name == "classification":
-            dec_out = self.classification(observed_data)
+            dec_out = self.classification(x_enc)
             return dec_out  # [B, N]
         return None

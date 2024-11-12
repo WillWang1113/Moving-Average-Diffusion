@@ -4,7 +4,6 @@ from ..layers.Transformer_EncDec import Encoder, EncoderLayer
 from ..layers.SelfAttention_Family import FullAttention, AttentionLayer
 from ..layers.Embed import PatchEmbedding
 
-
 class Transpose(nn.Module):
     def __init__(self, *dims, contiguous=False): 
         super().__init__()
@@ -41,7 +40,8 @@ class Model(nn.Module):
         """
         super().__init__()
         self.task_name = configs.task_name
-        self.seq_len = configs.seq_len
+        self.seq_len = int((configs.seq_len - configs.ma_ks) / configs.ma_stride + 1)
+        # self.seq_len = configs.seq_len
         self.pred_len = int((configs.pred_len - configs.ma_ks) / configs.ma_stride + 1)
         padding = stride
 
@@ -67,12 +67,12 @@ class Model(nn.Module):
 
         # Prediction Head
         self.head_nf = configs.d_model * \
-                       int((configs.seq_len - patch_len) / stride + 2)
+                       int((self.seq_len - patch_len) / stride + 2)
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
             self.head = FlattenHead(configs.enc_in, self.head_nf, self.pred_len,
                                     head_dropout=configs.dropout)
         elif self.task_name == 'imputation' or self.task_name == 'anomaly_detection':
-            self.head = FlattenHead(configs.enc_in, self.head_nf, configs.seq_len,
+            self.head = FlattenHead(configs.enc_in, self.head_nf, self.seq_len,
                                     head_dropout=configs.dropout)
         elif self.task_name == 'classification':
             self.flatten = nn.Flatten(start_dim=-2)
@@ -92,6 +92,13 @@ class Model(nn.Module):
         # self.linear = nn.Linear(self.pred_len, 1)
         
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
+        x_enc = torch.nn.functional.avg_pool1d(
+            x_enc.permute(0, 2, 1),
+            self.configs.ma_ks,
+            stride=self.configs.ma_stride,
+        ).permute(0, 2, 1)
+        
+        
         # Normalization from Non-stationary Transformer
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means

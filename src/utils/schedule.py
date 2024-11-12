@@ -10,10 +10,14 @@ thismodule = sys.modules[__name__]
 
 
 def get_schedule(noise_name, n_steps, **kwargs):
-    if noise_name != "std":
-        assert noise_name in ["linear", "cosine", "zero", "freqresp"]
+    if noise_name in ["linear", "cosine", "zero"]:
         fn = getattr(thismodule, noise_name + "_schedule")
         return fn(n_steps)
+    elif noise_name == "freqresp":
+        assert (kwargs.get("seq_len") is not None) and (
+            kwargs.get("factor_only") is not None
+        )
+        return freqresp_schedule(kwargs.get("seq_len"), kwargs.get("factor_only"))
 
     else:
         assert (kwargs.get("check_pth") is not None) and (
@@ -110,7 +114,7 @@ def std_schedule(
 
     file_name = os.path.join(
         check_pth,
-        f"stdschedule_norm_FO_{factor_only}_SETKS_{stride_equal_to_kernel_size}.pt",
+        f"stdschedule_normmean_FO_{factor_only}_SETKS_{stride_equal_to_kernel_size}.pt",
     )
     exist = os.path.exists(file_name)
     if exist:
@@ -132,9 +136,14 @@ def std_schedule(
         for batch in tqdm.tqdm(train_dl):
             x = batch["future_data"]
             mean = torch.mean(x, dim=1, keepdim=True)
-            stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-6)
-            x_norm = (x - mean) / stdev
-            orig_std = 1
+            # stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-6)
+            x_norm = x - mean
+            # x_norm = (x - mean) / stdev
+            # x_norm = x
+
+            orig_std = torch.sqrt(
+                torch.var(x_norm, dim=1, keepdim=True, unbiased=False) + 1e-5
+            )
             kernel_list = (
                 get_factors(seq_length)
                 if factor_only
@@ -164,9 +173,11 @@ def std_schedule(
         return all_ratio, torch.sqrt(1 - all_ratio**2)
 
 
-def freqresp_schedule(n_steps):
-    seq_len = n_steps + 1
-    fr = [MovingAvgFreq(i, seq_len).K.diag() for i in range(2, seq_len + 1)]
+def freqresp_schedule(seq_len, factor_only=False):
+    kernel_list = get_factors(seq_len) if factor_only else list(range(2, seq_len + 1))
+    print(kernel_list)
+    # seq_len = n_steps + 1
+    fr = [MovingAvgFreq(i, seq_len).K.diag() for i in kernel_list]
     fr = torch.stack(fr)  # [steps, seq_len//2 + 1]
     fr = 1 - (fr.conj() * fr).real
     fr = torch.sqrt(fr + 1e-6)
