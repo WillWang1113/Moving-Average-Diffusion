@@ -100,7 +100,7 @@ def main(args, n):
     model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl = (
         prepare_train(model_config, data_config, args, n)
     )
-    # ! MUST SETUP SEED AFTER prepare_train
+    # MUST SETUP SEED AFTER prepare_train
     seed_everything(n, workers=True)
     diff = df(
         backbone_config=model_config["bb_config"],

@@ -1,27 +1,23 @@
 bb_config:
-  name: FreqMLPBackbone
+  name: DiT
   d_model: 128
-  d_mlp: 512 # original 512
+  patch_size: 8
+  num_heads: 8
+  # d_mlp: 512 # original 512
   n_layers: 3 # original 3
   dropout: 0.1
+  cond_dropout_prob: 0.0
+  norm: on
+  freq_denoise: off
   # freq_denoise: on
 
-cn_config:
-  name: MLPStatsConditioner
-  hidden_size: 256
-  latent_dim: 128
-  norm: on
-
 diff_config:
-  name: CMAD
-  noise_schedule: freqresp
+  name: MADT
+  noise_schedule: std
   norm: on
   pred_diff: off
-  freq: on
   factor_only: off
   stride_equal_to_kernel_size: off
-  p_uncond: 0.5
-  T: 1000
 
 train_config:
   epochs: 100

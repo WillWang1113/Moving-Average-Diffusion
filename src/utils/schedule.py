@@ -110,7 +110,7 @@ def std_schedule(
     stride_equal_to_kernel_size=True,
 ):
     batch = next(iter(train_dl))
-    seq_length = batch["future_data"].shape[1]
+    seq_length = batch["x"].shape[1]
 
     file_name = os.path.join(
         check_pth,
@@ -123,18 +123,18 @@ def std_schedule(
         return {
             "alpha_bars": None,
             "beta_bars": None,
-            "alphas": None,
+            "alphas": all_ratio,
             "betas": torch.sqrt(1 - all_ratio**2).float(),
         }
         return torch.sqrt(1 - all_ratio**2)
     else:
         print("Calculate schedule...")
         batch = next(iter(train_dl))
-        seq_length = batch["future_data"].shape[1]
+        seq_length = batch["x"].shape[1]
 
         all_ratio = []
         for batch in tqdm.tqdm(train_dl):
-            x = batch["future_data"]
+            x = batch["x"]
             mean = torch.mean(x, dim=1, keepdim=True)
             # stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-6)
             x_norm = x - mean
@@ -167,7 +167,7 @@ def std_schedule(
         return {
             "alpha_bars": None,
             "beta_bars": None,
-            "alphas": None,
+            "alphas": all_ratio,
             "betas": torch.sqrt(1 - all_ratio**2).float(),
         }
         return all_ratio, torch.sqrt(1 - all_ratio**2)

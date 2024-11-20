@@ -31,7 +31,7 @@ def data_provider(args, flag):
     drop_last = False
     batch_size = args.batch_size
     if flag in ['test', 'val'] :
-        batch_size = max(batch_size, 128)
+        batch_size = max(batch_size, 1024)
     # freq = args.freq
 
     data_set = Data(
@@ -42,6 +42,8 @@ def data_provider(args, flag):
         size=[args.seq_len, args.label_len, args.pred_len],
         features=args.features,
         target=args.target,
+        condition = args.condition,
+        kernel_size=args.kernel_size,
         # timeenc=timeenc,
         # freq=freq,
         # seasonal_patterns=args.seasonal_patterns,

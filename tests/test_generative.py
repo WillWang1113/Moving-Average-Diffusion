@@ -6,7 +6,7 @@ import numpy as np
 from src.utils.train import setup_seed
 
 # root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
-root_pth = "/home/user/data/MAD/savings"
+root_pth = "/home/user/data/MAD_fcst/savings"
 # root_pth = "/home/user/data/FrequencyDiffusion/savings"
 setup_seed()
 
@@ -36,7 +36,8 @@ if __name__ == "__main__":
     # base_model_name = "MADtime_pl_FactOnly_FreqDoi"
     # base_model_name = "MADfreq"
     # base_model_name = "MADfreq_FactOnly"
-    base_model_name = "MADfreq_puncond0.5"
+    base_model_name = "MADT_FO_SETKS_FD"
+    # base_model_name = "MADfreq_puncond0.5"
     # base_model_name = "MADfreq_FactOnly_puncond0.5"
 
     # model_name = f"MADtime_pl_Full_SETKS_bs{bs}"
@@ -68,11 +69,14 @@ if __name__ == "__main__":
             #     save_dir, f"{real_d}_{pl}_S", model_name, "dtm_.npy"
             # )
 
+            # result_path = os.path.join(
+            #     save_dir, f"{real_d}_{pl}_S", model_name, "initmodel_PatchTST_startks4__dtm__.npy"
+            # )
             result_path = os.path.join(
-                save_dir, f"{real_d}_{pl}_S", model_name, "initmodel_PatchTST_startks4__dtm__.npy"
+                save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_False_dtm_True.npy"
             )
             # result_path = os.path.join(
-            #     save_dir, f"{real_d}_{pl}_S", model_name, "__fast_dtm__.npy"
+            #     save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_True_dtm_True.npy"
             # )
             # result_path = os.path.join(
             #     save_dir, f"{real_d}_{pl}_S", model_name, "__dtm__.npy"
@@ -95,8 +99,8 @@ if __name__ == "__main__":
         all_df.append(ds_df)
     all_df = pd.concat(all_df)
     print(all_df)
-    print(f"assets/{model_name}_refine.csv")
-    all_df.to_csv(f"assets/{model_name}_refine.csv")
+    print(f"assets/{model_name}_fcst.csv")
+    all_df.to_csv(f"assets/{model_name}_fcst.csv")
     # all_df.to_csv(f"assets/{model_name}_fcst.csv")
 
     # all_bench_df = pd.read_csv(

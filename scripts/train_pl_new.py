@@ -20,14 +20,16 @@ def prepare_train(model_config, data_config, args, n):
 
     _, train_dl = data_provider(data_config, "train")
     _, val_dl = data_provider(data_config, "val")
-    _, test_dl = data_provider(data_config, "test")
+    # _, test_dl = data_provider(data_config, "test")
 
     data_folder = os.path.join(
         root_pth,
         f"{args['data_config']}_{data_config['pred_len']}_{data_config['features']}",
     )
     save_folder = os.path.join(
-        data_folder, args["model_config"] + f"_bs{data_config['batch_size']}"
+        data_folder,
+        args["model_config"]
+        + f"_bs{data_config['batch_size']}_cond{data_config['condition']}_ks{data_config['kernel_size']}",
     )
     os.makedirs(save_folder, exist_ok=True)
     with open(os.path.join(save_folder, "config.json"), "w") as w:
@@ -40,24 +42,17 @@ def prepare_train(model_config, data_config, args, n):
 
     # with open(os.path.join(data_folder, "scaler.npy"), "wb") as f:
     #     np.save(f, scaler)
-    torch.save(test_dl, os.path.join(data_folder, "test_dl.pt"))
+    # torch.save(test_dl, os.path.join(data_folder, "test_dl.pt"))
     batch = next(iter(train_dl))
-    seq_length, seq_channels = (
-        batch["observed_data"].shape[1],
-        batch["observed_data"].shape[2],
-    )
-    target_seq_length, target_seq_channels = (
-        batch["future_data"].shape[1],
-        batch["future_data"].shape[2],
-    )
-    ff = batch.get("future_features", None)
-    future_seq_length, future_seq_channels = (
-        ff.shape[1] if ff is not None else ff,
-        ff.shape[2] if ff is not None else ff,
-    )
-
+    target_seq_length, target_seq_channels = (batch["x"].shape[1], batch["x"].shape[2])
     model_config["bb_config"]["seq_channels"] = target_seq_channels
     model_config["bb_config"]["seq_length"] = target_seq_length
+
+    if data_config["condition"] is not None:
+        seq_length, seq_channels = (batch["c"].shape[1], batch["c"].shape[2])
+        model_config["bb_config"]["cond_seq_chnl"] = seq_channels
+        model_config["bb_config"]["cond_seq_len"] = seq_length
+
     ns_name = model_config["diff_config"].pop("noise_schedule")
     n_steps = (
         target_seq_length - 1
@@ -68,18 +63,21 @@ def prepare_train(model_config, data_config, args, n):
         ns_name,
         n_steps,
         data_name=args["data_config"],
-        seq_len=target_seq_length,
         train_dl=train_dl,
         check_pth=data_folder,
-        factor_only=model_config["diff_config"]["factor_only"],
-        stride_equal_to_kernel_size=model_config["diff_config"][
-            "stride_equal_to_kernel_size"
-        ],
+        seq_len=target_seq_length,
+        factor_only=model_config["diff_config"].get("factor_only", None),
+        stride_equal_to_kernel_size=model_config["diff_config"].get(
+            "stride_equal_to_kernel_size", None
+        ),
     )
-    return model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl
+    return model_config, noise_schedule, df, save_folder, train_dl, val_dl
 
 
 def main(args, n):
+    # MUST SETUP SEED AFTER prepare_train
+    seed_everything(n, workers=True)
+
     data_config = yaml.safe_load(
         open(f'configs/dataset/{args["data_config"]}.yaml', "r")
     )
@@ -90,14 +88,12 @@ def main(args, n):
     )
     model_config = exp_parser(model_config, args)
 
-    model_config, noise_schedule, df, save_folder, train_dl, val_dl, test_dl = (
-        prepare_train(model_config, data_config, args, n)
+    model_config, noise_schedule, df, save_folder, train_dl, val_dl = prepare_train(
+        model_config, data_config, args, n
     )
-    # ! MUST SETUP SEED AFTER prepare_train
-    seed_everything(n, workers=True)
     diff = df(
         backbone_config=model_config["bb_config"],
-        conditioner_config=model_config["cn_config"],
+        # conditioner_config=model_config["cn_config"],
         noise_schedule=noise_schedule,
         lr=model_config["train_config"]["lr"],
         alpha=model_config["train_config"]["alpha"],
@@ -118,6 +114,7 @@ def main(args, n):
         default_root_dir=save_folder,
         fast_dev_run=args["smoke_test"],
         enable_progress_bar=args["smoke_test"],
+        check_val_every_n_epoch=model_config["train_config"]["val_step"],
         # **model_config["train_config"],
     )
 
@@ -143,15 +140,18 @@ if __name__ == "__main__":
         required=True,
         help="name of data configuration file.",
     )
-    parser.add_argument("--save_dir", required=True, type=str)
+    parser.add_argument("--save_dir", default="/home/user/data/MAD/savings", type=str)
     parser.add_argument("--smoke_test", action="store_true")
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--num_train", type=int, default=5)
 
-    # Define overrides on dataset
+    # override data params
     parser.add_argument("--pred_len", type=int)
     parser.add_argument("--seq_len", type=int)
     parser.add_argument("--batch_size", type=int)
+    parser.add_argument("--condition", type=str)
+    parser.add_argument("--kernel_size", type=int)
+
     args = parser.parse_args()
     for i in range(args.num_train):
         main(vars(args), i)

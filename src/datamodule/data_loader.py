@@ -26,6 +26,8 @@ class Dataset_ETT_hour(Dataset):
         target="OT",
         scale=True,
         timeenc=0,
+        condition=None,
+        kernel_size=None,
         # freq="h",
         # seasonal_patterns=None,
     ):
@@ -41,6 +43,12 @@ class Dataset_ETT_hour(Dataset):
             self.label_len = size[1]
             self.pred_len = size[2]
         # init
+        assert condition in [None, "fcst", "sr"]
+        if condition == "sr":
+            assert kernel_size is not None
+            self.kernel_size = kernel_size
+        
+        self.condition = condition
         assert flag in ["train", "test", "val"]
         type_map = {"train": 0, "val": 1, "test": 2}
         self.set_type = type_map[flag]
@@ -112,12 +120,28 @@ class Dataset_ETT_hour(Dataset):
 
         seq_x = self.data_x[s_begin:s_end]
         seq_y = self.data_y[r_begin:r_end]
+
+        if self.condition is None:
+            batch_data = {"x": seq_y}
+        elif self.condition == "fcst":
+            batch_data = {"x": seq_y, "c": seq_x}
+        elif self.condition == "sr":
+            avg = torch.nn.AvgPool1d(self.kernel_size, self.kernel_size)
+            c = avg(seq_y.unsqueeze(0).permute(0, 2, 1))
+            c = (
+                torch.nn.functional.interpolate(
+                    c, size=seq_y.shape[0], mode="linear"
+                )
+                .permute(0, 2, 1)
+                .squeeze(0)
+            )
+            batch_data = {"x": seq_y, "c": c}
         # seq_x_mark = self.data_stamp[s_begin:s_end]
         # seq_y_mark = self.data_stamp[r_begin:r_end]
-        batch_data = {
-            "observed_data": seq_x,
-            "future_data": seq_y,
-        }
+        # batch_data = {
+        #     "observed_data": seq_x,
+        #     "future_data": seq_y,
+        # }
         # if self.future_features.numel():
         #     batch_data["future_features"] = self.future_features[index]
         return batch_data
@@ -141,6 +165,8 @@ class Dataset_ETT_minute(Dataset):
         target="OT",
         scale=True,
         timeenc=0,
+        condition=None,
+        kernel_size=None,
         # freq="t",
         # seasonal_patterns=None,
     ):
@@ -157,6 +183,12 @@ class Dataset_ETT_minute(Dataset):
             self.pred_len = size[2]
         # init
         assert flag in ["train", "test", "val"]
+        assert condition in [None, "fcst", "sr"]
+        if condition == "sr":
+            assert kernel_size is not None
+            self.kernel_size = kernel_size
+        self.condition = condition
+
         type_map = {"train": 0, "val": 1, "test": 2}
         self.set_type = type_map[flag]
 
@@ -237,8 +269,24 @@ class Dataset_ETT_minute(Dataset):
         # seq_x_mark = self.data_stamp[s_begin:s_end]
         # seq_y_mark = self.data_stamp[r_begin:r_end]
 
+        if self.condition is None:
+            batch_data = {"x": seq_y}
+        elif self.condition == "fcst":
+            batch_data = {"x": seq_y, "c": seq_x}
+        elif self.condition == "sr":
+            avg = torch.nn.AvgPool1d(self.kernel_size, self.kernel_size)
+            c = avg(seq_y.unsqueeze(0).permute(0, 2, 1))
+            c = (
+                torch.nn.functional.interpolate(
+                    c, size=seq_y.shape[0], mode="linear"
+                )
+                .permute(0, 2, 1)
+                .squeeze(0)
+            )
+            batch_data = {"x": seq_y, "c": c}
+            
         # return seq_x, seq_y, seq_x_mark, seq_y_mark
-        batch_data = {"observed_data": seq_x, "future_data": seq_y}
+        # batch_data = {"observed_data": seq_x, "future_data": seq_y}
         # if self.future_features.numel():
         #     batch_data["future_features"] = self.future_features[index]
         return batch_data
@@ -262,6 +310,8 @@ class Dataset_Custom(Dataset):
         target="OT",
         scale=True,
         timeenc=0,
+        condition=None,
+        kernel_size=None,
         # freq="h",
         # seasonal_patterns=None,
     ):
@@ -278,6 +328,10 @@ class Dataset_Custom(Dataset):
             self.pred_len = size[2]
         # init
         assert flag in ["train", "test", "val"]
+        assert condition in [None, "fcst", "sr"]
+        if condition == "sr":
+            assert kernel_size is not None
+            self.kernel_size = kernel_size
         type_map = {"train": 0, "val": 1, "test": 2}
         self.set_type = type_map[flag]
 
@@ -285,6 +339,7 @@ class Dataset_Custom(Dataset):
         self.target = target
         self.scale = scale
         self.timeenc = timeenc
+        self.condition = condition
         # self.freq = freq
 
         self.root_path = root_path
@@ -322,7 +377,7 @@ class Dataset_Custom(Dataset):
             data = self.scaler.transform(df_data.values)
         else:
             data = df_data.values
-            
+
         print(data.shape)
 
         # df_stamp = df_raw[["date"]][border1:border2]
@@ -360,12 +415,25 @@ class Dataset_Custom(Dataset):
         # seq_x_mark = self.data_stamp[s_begin:s_end]
         # seq_y_mark = self.data_stamp[r_begin:r_end]
         # return seq_x, seq_y, seq_x_mark, seq_y_mark
-        
-        batch_data = {"observed_data": seq_x, "future_data": seq_y}
+        if self.condition is None:
+            batch_data = {"x": seq_y}
+        elif self.condition == "fcst":
+            batch_data = {"x": seq_y, "c": seq_x}
+        elif self.condition == "sr":
+            avg = torch.nn.AvgPool1d(self.kernel_size, self.kernel_size)
+            c = avg(seq_y.unsqueeze(0).permute(0, 2, 1))
+            c = (
+                torch.nn.functional.interpolate(
+                    c, size=seq_y.shape[0], mode="linear"
+                )
+                .permute(0, 2, 1)
+                .squeeze(0)
+            )
+            batch_data = {"x": seq_y, "c": c}
+        # batch_data = {"observed_data": seq_x, "future_data": seq_y}
         # if self.future_features.numel():
         #     batch_data["future_features"] = self.future_features[index]
         return batch_data
-
 
     def __len__(self):
         return len(self.data_x) - self.seq_len - self.pred_len + 1

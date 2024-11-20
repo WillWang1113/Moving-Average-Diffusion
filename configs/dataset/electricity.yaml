@@ -9,3 +9,5 @@ seq_len: 96
 pred_len: 96
 label_len: 0
 batch_size: 128
+condition: Null
+kernel_size: 8
