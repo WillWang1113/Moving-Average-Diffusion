@@ -14,6 +14,7 @@ def get_factors(n):
     )
     f.sort()
     f.append(n)
+    f = [1] + f
     return f
 
 

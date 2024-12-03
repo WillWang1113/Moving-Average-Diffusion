@@ -31,6 +31,7 @@ def data_provider(args, flag):
     drop_last = False
     batch_size = args.batch_size
     if flag in ['test', 'val'] :
+        # batch_size = 32
         batch_size = max(batch_size, 1024)
     # freq = args.freq
 

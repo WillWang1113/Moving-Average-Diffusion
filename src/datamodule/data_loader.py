@@ -332,6 +332,7 @@ class Dataset_Custom(Dataset):
         if condition == "sr":
             assert kernel_size is not None
             self.kernel_size = kernel_size
+            print('Super-Resolution Task')
         type_map = {"train": 0, "val": 1, "test": 2}
         self.set_type = type_map[flag]
 

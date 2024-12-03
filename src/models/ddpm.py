@@ -13,7 +13,7 @@ class DDPM(L.LightningModule):
         self,
         backbone_config: dict,
         # conditioner_config: dict,
-        noise_schedule: dict,
+        ns_path: str,
         norm=False,
         lr=2e-4,
         alpha=1e-5,
@@ -36,7 +36,7 @@ class DDPM(L.LightningModule):
 
         # in this DDPM.py, attribute alpha_bars for x_0 to x_t
         # in this DDPM.py, attribute alphas for x_t to x_t+1
-
+        noise_schedule = torch.load(ns_path)
         self.register_buffer("alphas", noise_schedule["alphas"])
         self.register_buffer("betas", noise_schedule["betas"])
         self.register_buffer("alpha_bars", noise_schedule["alpha_bars"])
@@ -74,25 +74,28 @@ class DDPM(L.LightningModule):
         self.log("val_loss", loss, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
-    def predict_step(self, batch):
+    def predict_step(self, batch, batch_idx):
         assert self._sample_ready
         x_real = batch.pop("x")
         cond = batch.get("c", None)
         all_sample_x = []
         for _ in range(self.n_sample):
-            
             x = self._init_noise(x_real)
 
             for t in range(self.T - 1, -1, -1):
                 z = torch.randn_like(x)
                 t_tensor = torch.tensor(t, device=x.device).repeat(x.shape[0])
                 eps_theta, mu, std = self.backbone(x, t_tensor, cond)
-                
+
                 if self.pred_x0:
                     if t > 0:
                         mu_pred = (
-                            torch.sqrt(self.alphas[t]) * (1 - self.alpha_bars[t - 1]) * x
-                            + torch.sqrt(self.alpha_bars[t - 1]) * self.betas[t] * eps_theta
+                            torch.sqrt(self.alphas[t])
+                            * (1 - self.alpha_bars[t - 1])
+                            * x
+                            + torch.sqrt(self.alpha_bars[t - 1])
+                            * self.betas[t]
+                            * eps_theta
                         )
                         mu_pred = mu_pred / (1 - self.alpha_bars[t])
                     else:
@@ -115,15 +118,19 @@ class DDPM(L.LightningModule):
                 x = mu_pred + sigma * z
 
             # denorm
-            if not self.norm:                    
+            if not self.norm:
                 mu, std = 0.0, 1.0
-                
+                if self.condition == "sr":
+                    mu = torch.mean(cond, dim=1, keepdim=True) - torch.mean(
+                        x, dim=1, keepdim=True
+                    )
+
             out_x = x * std + mu
             assert out_x.shape == x_real.shape
             all_sample_x.append(out_x)
 
         all_sample_x = torch.stack(all_sample_x)
-            
+
         return all_sample_x
 
     def _get_loss(self, x, condition: dict = None, x_mean=None, x_std=None):
@@ -153,18 +160,19 @@ class DDPM(L.LightningModule):
 
         return loss
 
-
     def _init_noise(
         self,
         x: torch.Tensor,
     ):
         return torch.randn_like(x)
-    
+
         # shape = (self.n_sample, x.shape[0], x.shape[1], x.shape[2])
         # return torch.randn(shape, device=x.device)
 
-    def config_sampling(self, n_sample, **kwargs):
+    def config_sampling(self, n_sample, condition, **kwargs):
         self.n_sample = n_sample
+        assert condition in ["fcst", "sr"]
+        self.condition = condition
         self._sample_ready = True
 
     def _normalize(self, x):

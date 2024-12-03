@@ -84,19 +84,21 @@ class ConditionEmbed(nn.Module):
         latent_dim,
         cond_dropout_prob=0.5,
         norm=True,
+        num_patches=1,
     ) -> None:
         super().__init__()
 
         self.latent_dim = latent_dim
         self.norm = norm
+        self.num_patches = num_patches
         # self.embedder = nn.Linear(seq_length, hidden_size)
         if norm:
             self.rev = RevIN(seq_channels)
         self.input_enc = MLP(
             in_channels=seq_length,
-            hidden_channels=[hidden_size, hidden_size],
+            hidden_channels=[hidden_size * 2, hidden_size],
         )
-        self.pred_dec = torch.nn.Linear(hidden_size * seq_channels, latent_dim)
+        self.pred_dec = torch.nn.Linear(hidden_size, latent_dim * num_patches)
         self.dropout_prob = cond_dropout_prob
         self.seq_channels = seq_channels
 
@@ -196,7 +198,7 @@ class DiTBlock(nn.Module):
             in_features=hidden_size,
             hidden_features=mlp_hidden_dim,
             act_layer=approx_gelu,
-            drop=0,
+            **block_kwargs
         )
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
@@ -273,12 +275,12 @@ class DiT(nn.Module):
         else:
             in_seq_length = seq_length
             in_channels = seq_channels
-
+        self.in_channels = in_channels
         self.x_embedder = PatchEmbed(
             in_seq_length, patch_size, seq_channels, d_model, bias=True
         )
         self.t_embedder = TimestepEmbedder(d_model)
-        
+
         self.cond = False
         if (cond_seq_chnl is not None) and (cond_seq_len is not None):
             self.cond = True
@@ -290,10 +292,11 @@ class DiT(nn.Module):
                 norm=norm,
                 cond_dropout_prob=cond_dropout_prob,
             )
-        
+
             self.mean_dec = torch.nn.Linear(self.seq_length, 1)
             self.std_dec = torch.nn.Linear(self.seq_length, 1)
-        
+            self.pred_dec = torch.nn.Linear(d_model, self.seq_length * in_channels)
+
         # self.y_embedder = nn.Identity()
         # self.y_embedder = LabelEmbedder(cond_dim, d_model, cond_dropout_prob)
         num_patches = self.x_embedder.num_patches
@@ -303,7 +306,17 @@ class DiT(nn.Module):
         )
 
         self.blocks = nn.ModuleList(
-            [DiTBlock(d_model, num_heads, mlp_ratio=mlp_ratio) for _ in range(n_layers)]
+            [
+                DiTBlock(
+                    d_model,
+                    num_heads,
+                    mlp_ratio=mlp_ratio,
+                    attn_drop=kwargs.get("dropout", 0),
+                    proj_drop=kwargs.get("dropout", 0),
+                    drop=kwargs.get("dropout", 0),
+                )
+                for _ in range(n_layers)
+            ]
         )
         self.final_layer = FinalLayer(d_model, patch_size, self.out_channels)
         self.initialize_weights()
@@ -389,21 +402,35 @@ class DiT(nn.Module):
 
         if condition is not None:
             condition = self.cond_embed(condition, train, force_drop_ids)  # (N, D)
+            y_pred = self.pred_dec(condition).reshape(-1, self.seq_length, self.in_channels)
+            
+            x_denorm = self.cond_embed.rev(y_pred, "denorm") if self.cond_embed.norm else y_pred
+            x_mean = self.mean_dec(x_denorm.permute(0, 2, 1)).permute(0, 2, 1)
+            x_std = self.std_dec(x_denorm.permute(0, 2, 1)).permute(0, 2, 1)
+            
             c = t + condition  # (N, D)
         else:
+            x_mean, x_std = (
+                torch.zeros_like(x)[:, [0], :],
+                torch.ones_like(x)[:, [0], :],
+            )
+            y_pred = 0
             c = t
 
         for block in self.blocks:
             x = block(x, c)  # (N, T, D)
         x = self.final_layer(x, c)  # (N, T, patch_size * out_channels)
         x = self.unpatchify(x)  # (N, seq_len, out_channels)
-        
-        if condition is not None:
-            x_denorm = self.cond_embed.rev(x, "denorm") if self.cond_embed.norm else x
-            x_mean = self.mean_dec(x_denorm.permute(0, 2, 1)).permute(0, 2, 1)
-            x_std = self.std_dec(x_denorm.permute(0, 2, 1)).permute(0, 2, 1)
-        else:
-            x_mean, x_std = torch.zeros_like(x)[:,[0],:], torch.ones_like(x)[:,[0],:]
+
+        # if condition is not None:
+        #     x_denorm = self.cond_embed.rev(x, "denorm") if self.cond_embed.norm else x
+        #     x_mean = self.mean_dec(x_denorm.permute(0, 2, 1)).permute(0, 2, 1)
+        #     x_std = self.std_dec(x_denorm.permute(0, 2, 1)).permute(0, 2, 1)
+        # else:
+        #     x_mean, x_std = (
+        #         torch.zeros_like(x)[:, [0], :],
+        #         torch.ones_like(x)[:, [0], :],
+        #     )
 
         if self.freq_denoise or input_freq:
             # ! for test
@@ -420,11 +447,12 @@ class DiT(nn.Module):
             x = torch.view_as_complex(x)
         if self.freq_denoise:
             x = torch.fft.irfft(x, dim=1, norm="ortho")
-            
+
         # print('outshape')
         # print(x.shape)
         # print(x_mean.shape)
         # print(x_std.shape)
+        x = x + y_pred
 
         return x, x_mean, x_std
 

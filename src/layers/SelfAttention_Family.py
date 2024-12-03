@@ -341,7 +341,7 @@ class Attention(nn.Module):
             qk_norm: bool = False,
             attn_drop: float = 0.,
             proj_drop: float = 0.,
-            norm_layer: nn.Module = nn.LayerNorm,
+            norm_layer: nn.Module = nn.LayerNorm, **kwargs
     ) -> None:
         super().__init__()
         assert dim % num_heads == 0, 'dim should be divisible by num_heads'

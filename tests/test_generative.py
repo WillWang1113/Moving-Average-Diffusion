@@ -6,7 +6,8 @@ import numpy as np
 from src.utils.train import setup_seed
 
 # root_pth = "/mnt/ExtraDisk/wcx/research/FrequencyDiffusion/savings"
-root_pth = "/home/user/data/MAD_fcst/savings"
+root_pth = "savings/MAD_fcst/savings"
+# root_pth = "/home/user/data/MAD_fcst/savings"
 # root_pth = "/home/user/data/FrequencyDiffusion/savings"
 setup_seed()
 
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     # base_model_name = "MADtime_pl_FactOnly_FreqDoi"
     # base_model_name = "MADfreq"
     # base_model_name = "MADfreq_FactOnly"
-    base_model_name = "MADT_FO_SETKS_FD"
+    model_name = "MADTC_NFD_DIT_x0_bs64_condfcst"
     # base_model_name = "MADfreq_puncond0.5"
     # base_model_name = "MADfreq_FactOnly_puncond0.5"
 
@@ -56,7 +57,7 @@ if __name__ == "__main__":
     for d in ds:
         real_d = ds[d]
         ds_df = []
-        model_name = base_model_name + f"_bs{bs}"
+        # model_name = base_model_name + f"_bs{bs}"
 
         # hparam best
         # model_name = (
@@ -73,7 +74,7 @@ if __name__ == "__main__":
             #     save_dir, f"{real_d}_{pl}_S", model_name, "initmodel_PatchTST_startks4__dtm__.npy"
             # )
             result_path = os.path.join(
-                save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_False_dtm_True.npy"
+                save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_True_dtm_True.npy"
             )
             # result_path = os.path.join(
             #     save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_True_dtm_True.npy"
@@ -99,8 +100,8 @@ if __name__ == "__main__":
         all_df.append(ds_df)
     all_df = pd.concat(all_df)
     print(all_df)
-    print(f"assets/{model_name}_fcst.csv")
-    all_df.to_csv(f"assets/{model_name}_fcst.csv")
+    print(f"assets/{model_name}.csv")
+    all_df.to_csv(f"assets/{model_name}.csv")
     # all_df.to_csv(f"assets/{model_name}_fcst.csv")
 
     # all_bench_df = pd.read_csv(

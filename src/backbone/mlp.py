@@ -137,17 +137,19 @@ class MLPBackbone(nn.Module):
         self.norm = norm
 
         # condition
-        self.cond_embed = ConditionEmbed(
-            seq_channels=cond_seq_chnl,
-            seq_length=cond_seq_len,
-            hidden_size=d_mlp // 2,
-            latent_dim=d_model,
-            norm=norm,
-            cond_dropout_prob=cond_dropout_prob,
-        )
-
-        self.mean_dec = torch.nn.Linear(d_model, 1)
-        self.std_dec = torch.nn.Linear(d_model, 1)
+        # TODO: uncond
+        if (cond_seq_chnl is not None) and (cond_seq_len is not None):
+            self.cond_embed = ConditionEmbed(
+                seq_channels=cond_seq_chnl,
+                seq_length=cond_seq_len,
+                hidden_size=d_mlp // 2,
+                latent_dim=d_model,
+                norm=norm,
+                cond_dropout_prob=cond_dropout_prob,
+            )
+            self.pred_dec = torch.nn.Linear(d_model, seq_length)
+            self.mean_dec = torch.nn.Linear(seq_length, 1)
+            self.std_dec = torch.nn.Linear(seq_length, 1)
 
         # self.freq_denoise = freq_denoise
         self.embedder = nn.Linear(seq_length, d_model)
@@ -167,19 +169,7 @@ class MLPBackbone(nn.Module):
         self.seq_channels = seq_channels
         self.seq_length = seq_length
 
-    # def token_drop(self, labels, force_drop_ids=None):
-    #     """
-    #     Drops labels to enable classifier-free guidance.
-    #     """
-    #     if force_drop_ids is None:
-    #         drop_ids = (
-    #             torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
-    #         )
-    #     else:
-    #         drop_ids = force_drop_ids == 1
-    #     self.drop_ids = drop_ids.unsqueeze(1).unsqueeze(1)
-    #     labels = torch.where(self.drop_ids, torch.zeros_like(labels), labels)
-    #     return labels
+
 
     def forward(
         self,
@@ -215,8 +205,20 @@ class MLPBackbone(nn.Module):
         # c = self.con_linear(c)
         if condition is not None:
             c = self.cond_embed(condition, train, force_drop_ids).permute(0, 2, 1)
+            y_pred = self.pred_dec(c).permute(0, 2, 1)
+            if self.norm:
+                y_pred_denorm = self.cond_embed.rev(y_pred, "denorm")
+            else:
+                y_pred_denorm = y_pred
+            x_mean = self.mean_dec(y_pred_denorm.permute(0, 2, 1)).permute(0, 2, 1)
+            x_std = self.std_dec(y_pred_denorm.permute(0, 2, 1)).permute(0, 2, 1)
             x = x + (t + c)
         else:
+            x_mean, x_std = (
+                torch.zeros_like(x)[:, [0], :],
+                torch.ones_like(x)[:, [0], :],
+            )
+            y_pred = 0
             x = x + t
         # print('combine')
         # print(x.shape)·
@@ -226,9 +228,9 @@ class MLPBackbone(nn.Module):
         # x_denorm = torch.where(self.cond_embed.drop_ids, x, self.cond_embed.rev(x, "denorm"))
         # print(self.cond_embed.rev.affine_bias)
         # print(self.cond_embed.rev.affine_weight)
-        x_denorm = self.cond_embed.rev(x.permute(0, 2, 1), "denorm").permute(0, 2, 1)
-        x_mean = self.mean_dec(x_denorm).permute(0, 2, 1)
-        x_std = self.std_dec(x_denorm).permute(0, 2, 1)
+        # x_denorm = self.cond_embed.rev(x.permute(0, 2, 1), "denorm").permute(0, 2, 1)
+        # x_mean = self.mean_dec(x_denorm).permute(0, 2, 1)
+        # x_std = self.std_dec(x_denorm).permute(0, 2, 1)
         # print('x_mean')
         # print(x_mean.shape)
         # print(x_std.shape)
@@ -255,6 +257,7 @@ class MLPBackbone(nn.Module):
             x = torch.view_as_complex(x)
         if self.freq_denoise:
             x = torch.fft.irfft(x, dim=1, norm="ortho")
+        x = x + y_pred
         # print(x.shape)
 
         # return 0

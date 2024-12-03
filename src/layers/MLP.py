@@ -30,7 +30,7 @@ class Mlp(nn.Module):
         norm_layer=None,
         bias=True,
         drop=0.0,
-        use_conv=False,
+        use_conv=False, **kwargs
     ):
         super().__init__()
         out_features = out_features or in_features

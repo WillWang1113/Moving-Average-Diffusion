@@ -1,5 +1,5 @@
 data: custom
-root_path: /home/user/data/THU-timeseries
+root_path: /home/user/workspaces/THU-timeseries
 # root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
 data_path: electricity/electricity.csv
 features: S

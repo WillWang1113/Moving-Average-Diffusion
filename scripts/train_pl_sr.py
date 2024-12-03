@@ -29,7 +29,7 @@ def prepare_train(model_config, data_config, args, n):
     save_folder = os.path.join(
         data_folder,
         args["model_config"]
-        + f"_bs{data_config['batch_size']}_cond{data_config['condition']}_ks{data_config['kernel_size']}",
+        + f"_bs{data_config['batch_size']}_cond{data_config['condition']}_ks{data_config['kernel_size'] if data_config['condition']=='sr' else 'None'}",
     )
     os.makedirs(save_folder, exist_ok=True)
     with open(os.path.join(save_folder, "config.json"), "w") as w:
@@ -37,12 +37,8 @@ def prepare_train(model_config, data_config, args, n):
 
     df_ = model_config["diff_config"].pop("name")
     df = getattr(models, df_)
-    print(df)
-    # save_folder = os.path.join(data_folder, df_, exp_name)
+    # print(df)
 
-    # with open(os.path.join(data_folder, "scaler.npy"), "wb") as f:
-    #     np.save(f, scaler)
-    # torch.save(test_dl, os.path.join(data_folder, "test_dl.pt"))
     batch = next(iter(train_dl))
     target_seq_length, target_seq_channels = (batch["x"].shape[1], batch["x"].shape[2])
     model_config["bb_config"]["seq_channels"] = target_seq_channels
@@ -54,24 +50,38 @@ def prepare_train(model_config, data_config, args, n):
         model_config["bb_config"]["cond_seq_len"] = seq_length
 
     ns_name = model_config["diff_config"].pop("noise_schedule")
-    n_steps = (
-        target_seq_length - 1
-        if df_.__contains__("MAD")
-        else model_config["diff_config"]["T"]
-    )
-    noise_schedule = get_schedule(
+    # n_steps = (
+    #     target_seq_length - 1
+    #     if df_.__contains__("MAD")
+    #     else model_config["diff_config"]["T"]
+    # )
+    n_steps = model_config["diff_config"]["T"]
+
+    ns_path = get_schedule(
         ns_name,
         n_steps,
-        data_name=args["data_config"],
-        train_dl=train_dl,
         check_pth=data_folder,
-        seq_len=target_seq_length,
-        factor_only=model_config["diff_config"].get("factor_only", None),
-        stride_equal_to_kernel_size=model_config["diff_config"].get(
-            "stride_equal_to_kernel_size", None
-        ),
+        # data_name=args["data_config"],
+        train_dl=train_dl,
+        # seq_len=target_seq_length,
+        # factor_only=model_config["diff_config"].get("factor_only", None),
+        # stride_equal_to_kernel_size=model_config["diff_config"].get(
+        # "stride_equal_to_kernel_size", None
+        # ),
     )
-    return model_config, noise_schedule, df, save_folder, train_dl, val_dl
+    # noise_schedule = get_schedule(
+    #     ns_name,
+    #     n_steps,
+    #     check_pth=data_folder,
+    #     # data_name=args["data_config"],
+    #     train_dl=train_dl,
+    #     # seq_len=target_seq_length,
+    #     # factor_only=model_config["diff_config"].get("factor_only", None),
+    #     # stride_equal_to_kernel_size=model_config["diff_config"].get(
+    #     # "stride_equal_to_kernel_size", None
+    #     # ),
+    # )
+    return model_config, ns_path, df, save_folder, train_dl, val_dl
 
 
 def main(args, n):
@@ -88,13 +98,14 @@ def main(args, n):
     )
     model_config = exp_parser(model_config, args)
 
-    model_config, noise_schedule, df, save_folder, train_dl, val_dl = prepare_train(
+    model_config, ns_path, df, save_folder, train_dl, val_dl = prepare_train(
         model_config, data_config, args, n
     )
+    print(ns_path)
     diff = df(
         backbone_config=model_config["bb_config"],
         # conditioner_config=model_config["cn_config"],
-        noise_schedule=noise_schedule,
+        ns_path=ns_path,
         lr=model_config["train_config"]["lr"],
         alpha=model_config["train_config"]["alpha"],
         **model_config["diff_config"],

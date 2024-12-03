@@ -1,20 +1,20 @@
 bb_config:
-  name: DiT
+  name: MLPBackbone
   d_model: 128
-  patch_size: 8
-  num_heads: 4
-  # d_mlp: 512 # original 512
-  n_layers: 4 # original 3
+  # patch_size: 8
+  # num_heads: 4
+  d_mlp: 512 # original 512
+  n_layers: 3 # original 3
   dropout: 0.1
   cond_dropout_prob: 0.0
-  norm: off
+  norm: on
   freq_denoise: off
 
 diff_config:
-  name: DDPM
-  noise_schedule: linear
-  norm: off
-  pred_x0: off
+  name: MADTC
+  noise_schedule: std
+  norm: on
+  pred_diff: on
   T: 100
 
 train_config:
