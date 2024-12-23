@@ -37,7 +37,7 @@ if __name__ == "__main__":
     # base_model_name = "MADtime_pl_FactOnly_FreqDoi"
     # base_model_name = "MADfreq"
     # base_model_name = "MADfreq_FactOnly"
-    model_name = "MADTC_NFD_DIT_x0_bs64_condfcst"
+    model_name = "MADTC_NFD_MLP_x0_bs64_condfcst"
     # base_model_name = "MADfreq_puncond0.5"
     # base_model_name = "MADfreq_FactOnly_puncond0.5"
 
@@ -73,8 +73,9 @@ if __name__ == "__main__":
             # result_path = os.path.join(
             #     save_dir, f"{real_d}_{pl}_S", model_name, "initmodel_PatchTST_startks4__dtm__.npy"
             # )
+
             result_path = os.path.join(
-                save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_True_dtm_True.npy"
+                save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_False_dtm_True.npy"
             )
             # result_path = os.path.join(
             #     save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_True_dtm_True.npy"
@@ -101,7 +102,7 @@ if __name__ == "__main__":
     all_df = pd.concat(all_df)
     print(all_df)
     print(f"assets/{model_name}.csv")
-    all_df.to_csv(f"assets/{model_name}.csv")
+    all_df.to_csv(f"assets/{model_name}_fastfalse.csv")
     # all_df.to_csv(f"assets/{model_name}_fcst.csv")
 
     # all_bench_df = pd.read_csv(

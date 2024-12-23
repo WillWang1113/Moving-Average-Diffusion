@@ -1,7 +1,7 @@
 data: custom
-root_path: /home/user/workspaces/THU-timeseries
+root_path: /home/user/data/sr_data
 # root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
-data_path: MFRED/MFRED_new.csv
+data_path: wind_farms.csv
 features: S
 target: OT
 num_workers: 1

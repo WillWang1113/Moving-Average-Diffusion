@@ -50,6 +50,7 @@ class Dataset_ETT_hour(Dataset):
         
         self.condition = condition
         assert flag in ["train", "test", "val"]
+        self.flag = flag
         type_map = {"train": 0, "val": 1, "test": 2}
         self.set_type = type_map[flag]
 
@@ -328,6 +329,7 @@ class Dataset_Custom(Dataset):
             self.pred_len = size[2]
         # init
         assert flag in ["train", "test", "val"]
+        self.flag = flag
         assert condition in [None, "fcst", "sr"]
         if condition == "sr":
             assert kernel_size is not None

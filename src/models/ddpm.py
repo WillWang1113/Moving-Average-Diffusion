@@ -59,10 +59,19 @@ class DDPM(L.LightningModule):
         # if norm
         x, (x_mean, x_std) = self._normalize(x) if self.norm else (x, (None, None))
 
-        loss = self._get_loss(x, batch, x_mean, x_std)
+        loss, mean_loss, std_loss = self._get_loss(x, batch, x_mean, x_std)
 
-        self.log("train_loss", loss, on_epoch=True, prog_bar=True, logger=True)
-        return loss
+        log_dict = {
+            "recon_loss": loss,
+            "mean_loss": mean_loss,
+            "std_loss": std_loss,
+            "loss": loss + mean_loss + std_loss,
+        }
+
+        self.log_dict(
+            log_dict, on_epoch=True, prog_bar=True, logger=True, batch_size=x.shape[0]
+        )
+        return log_dict
 
     def validation_step(self, batch, batch_idx):
         x = batch.pop("x")
@@ -70,9 +79,18 @@ class DDPM(L.LightningModule):
         # if norm
         x, (x_mean, x_std) = self._normalize(x) if self.norm else (x, (None, None))
 
-        loss = self._get_loss(x, batch, x_mean, x_std)
-        self.log("val_loss", loss, on_epoch=True, prog_bar=True, logger=True)
-        return loss
+        loss, mean_loss, std_loss = self._get_loss(x, batch, x_mean, x_std)
+        log_dict = {
+            "recon_loss": loss,
+            "mean_loss": mean_loss,
+            "std_loss": std_loss,
+            "val_loss": loss + mean_loss + std_loss,
+        }
+
+        self.log_dict(
+            log_dict, on_epoch=True, prog_bar=True, logger=True, batch_size=x.shape[0]
+        )
+        return log_dict
 
     def predict_step(self, batch, batch_idx):
         assert self._sample_ready
@@ -117,13 +135,27 @@ class DDPM(L.LightningModule):
                     )
                 x = mu_pred + sigma * z
 
-            # denorm
-            if not self.norm:
-                mu, std = 0.0, 1.0
-                if self.condition == "sr":
-                    mu = torch.mean(cond, dim=1, keepdim=True) - torch.mean(
-                        x, dim=1, keepdim=True
-                    )
+            # uncond generation
+            if self.condition is None:
+                # if norm, use empirical mu and std
+                if self.norm:
+                    mu, std = self.init_mean, self.init_std
+                else:
+                    mu, std = 0.0, 1.0
+            elif self.condition == "sr":
+                if not self.norm:
+                    mu, std = self.init_mean - torch.mean(x, dim=1, keepdim=True), 1.0
+
+            elif self.condition == "fcst":
+                if not self.norm:
+                    mu, std = 0.0, 1.0
+
+                    # if not self.norm:
+                    #     mu, std = 0.0, 1.0
+                    #     if self.condition == "sr":
+                    # mu = torch.mean(cond, dim=1, keepdim=True) - torch.mean(
+                    #     x, dim=1, keepdim=True
+                    # )
 
             out_x = x * std + mu
             assert out_x.shape == x_real.shape
@@ -153,27 +185,48 @@ class DDPM(L.LightningModule):
             loss = F.mse_loss(eps_theta, noise)
 
         # regularizatoin
-        if x_mean is not None:
-            loss += F.mse_loss(x_mean_hat, x_mean)
-        if x_std is not None:
-            loss += F.mse_loss(x_std_hat, x_std)
+        if (x_mean is not None) and (cond is not None):
+            mean_loss = F.mse_loss(x_mean_hat, x_mean)
+        else:
+            mean_loss = 0
 
-        return loss
+        # TODO: scale too small?
+        if (x_std is not None) and (cond is not None):
+            # optimizing log std to stablize
+            std_loss = F.mse_loss(x_std_hat, x_std)
+        else:
+            std_loss = 0
+
+        return loss, mean_loss, std_loss
 
     def _init_noise(
         self,
         x: torch.Tensor,
     ):
-        return torch.randn_like(x)
+        x_T = torch.randn_like(x)
+        if self.condition is None:
+            if self.norm:
+                self.init_mean = self.init_mu_dist.sample()
+                _, (self.init_mean, self.init_std) = self._normalize(x)
+        elif self.condition == "sr":
+            self.init_mean = x.mean(dim=1, keepdim=True)
+
+        return x_T
 
         # shape = (self.n_sample, x.shape[0], x.shape[1], x.shape[2])
         # return torch.randn(shape, device=x.device)
 
-    def config_sampling(self, n_sample, condition, **kwargs):
+    def config_sampling(self, n_sample, condition, init_distribs=None, **kwargs):
         self.n_sample = n_sample
-        assert condition in ["fcst", "sr"]
+        assert condition in ["fcst", "sr", None]
         self.condition = condition
+        if self.condition is None:
+            if self.norm:
+                assert init_distribs is not None
+                self.init_mu_dist = init_distribs[0]
+                self.init_std_dist = init_distribs[1]
         self._sample_ready = True
+            
 
     def _normalize(self, x):
         mean = torch.mean(x, dim=1, keepdim=True)

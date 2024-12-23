@@ -2,7 +2,8 @@
 
 gpu=0
 # model_config=(MADTC_NFD)
-model_config=(MADTC_NFD_MLP_x0 MADTC_NFD_MLP_eps MADTC_NFD_DIT_eps MADTC_NFD_DIT_x0)
+model_config=(MADTC_NFD_MLP_x0)
+# model_config=(MADTC_NFD_MLP_x0 MADTC_NFD_MLP_eps MADTC_NFD_DIT_eps MADTC_NFD_DIT_x0)
 # model_config=(MADTC_FD_lr1e-4 MADTC_FD MADTC_NFD_lr1e-4 MADTC_NFD)
 
 save_dir=savings/MAD_fcst/savings
@@ -27,13 +28,13 @@ for mc in "${model_config[@]}"; do
     for j in "${data_pth[@]}"; do
       echo $j $i $mc
 
-      python -u scripts/train_pl_fcst.py \
-        -dc $j \
-        -mc $mc \
-        --save_dir $save_dir \
-        --seq_len $seq_len \
-        --pred_len $i \
-        --gpu $gpu --num_train $num_train --batch_size 64 --condition fcst
+      # python -u scripts/train_pl_fcst.py \
+      #   -dc $j \
+      #   -mc $mc \
+      #   --save_dir $save_dir \
+      #   --seq_len $seq_len \
+      #   --pred_len $i \
+      #   --gpu $gpu --num_train $num_train --batch_size 64 --condition fcst
 
       python scripts/sample_pl_new_c.py -dc $j \
         --model_name "${mc}_bs64_condfcst" \
@@ -45,7 +46,7 @@ for mc in "${model_config[@]}"; do
         --deterministic \
         --gpu $gpu \
         --seq_len $seq_len \
-        --pred_len $i --fast_sample
+        --pred_len $i
 
     done
   done

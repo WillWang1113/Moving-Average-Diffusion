@@ -44,6 +44,8 @@ class MADTC(L.LightningModule):
     def degrade(self, x: torch.Tensor, t: torch.Tensor):
         # fig, ax = plt.subplots()
         # ax.plot(x[0].flatten().cpu(), label='raw')
+        # print(x.shape)
+        # print(self.K[t].shape)
         x_filtered = self.K[t] @ x
         # ax.plot(x_filtered[0].flatten().cpu(), label='degraded')
         # add noise

@@ -14,7 +14,7 @@ from lightning.fabric import seed_everything
 from src import models
 from src.datamodule.data_factory import data_provider
 from src.utils.filters import get_factors
-from src.utils.metrics import calculate_metrics, get_encoder, sr_metrics, tstr_dlinear
+from src.utils.metrics import ablation_metrics, get_encoder, context_fid
 from src.utils.parser import exp_parser
 from src.utils.sample import plot_fcst
 import logging
@@ -28,9 +28,10 @@ def main(args):
 
     data_config = yaml.safe_load(open(f"configs/dataset/{args.data_config}.yaml", "r"))
     data_config = exp_parser(data_config, vars(args))
-    # data_config["features"] = "S"
+    data_config["features"] = "S"
     data_config["batch_size"] = 512
-    print(data_config)
+    data_config["condition"] = None
+    data_config["pred_len"] = 576
 
     # load configs
     root_path = os.path.join(
@@ -47,18 +48,21 @@ def main(args):
         # f"initmodel_{model_args.model}" if args.init_model else "",
         f"cond_{args.condition}",
         f"startks_{args.start_ks}",
-        f"fast_{args.fast_sample}",
+        # f"fast_{args.fast_sample}",
         f"dtm_{args.deterministic}",
+        # ! Force align
+        f"rds_{args.num_diff_steps}",
         # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
     ]
     out_name = "_".join(out_name)
-    if (args.num_train == 5) and os.path.exists(
-        os.path.join(
-            exp_path,
-            f"{out_name}.npy",
-        ),
-    ):
-        print("already have metrics.")
+    print(out_name)
+    # if (args.num_train == 5) and os.path.exists(
+    #     os.path.join(
+    #         exp_path,
+    #         f"{out_name}.npy",
+    #     ),
+    # ):
+    #     print("already have metrics.")
         # return 0
     _, train_dl = data_provider(data_config, "train")
     _, test_dl = data_provider(data_config, "test")
@@ -70,31 +74,33 @@ def main(args):
         ae = get_encoder(train_dl, device)
         torch.save(ae, ae_ckpt)
     print("Load data")
-    sample_steps = list(range(diffusion_steps))
-    sample_steps.reverse()
+    
+        
+    # sample_steps = list(range(diffusion_steps))
+    # sample_steps.reverse()
 
-    kernel_size = get_factors(seq_length)
-    # kernel_size = np.array(kernel_size)
-    interp_k = int((diffusion_steps - len(kernel_size)) / (len(kernel_size) - 1))
+    # kernel_size = get_factors(seq_length)
+    # # kernel_size = np.array(kernel_size)
+    # interp_k = int((diffusion_steps - len(kernel_size)) / (len(kernel_size) - 1))
 
-    if args.fast_sample:
-        sample_steps = sample_steps[:: interp_k + 1]
-        if 0 not in sample_steps:
-            sample_steps.append(0)
+    # if args.fast_sample:
+    #     sample_steps = sample_steps[:: interp_k + 1]
+    #     if 0 not in sample_steps:
+    #         sample_steps.append(0)
 
-    if args.start_ks is not None:
-        start_idx = kernel_size.index(args.start_ks)
-        start_idx = round(start_idx / (len(kernel_size) - 1) * (len(sample_steps) - 1))
-        start_idx = len(sample_steps) - 1 - start_idx
-        sample_steps = sample_steps[start_idx:]
+    # if args.start_ks is not None:
+    #     start_idx = kernel_size.index(args.start_ks)
+    #     start_idx = round(start_idx / (len(kernel_size) - 1) * (len(sample_steps) - 1))
+    #     start_idx = len(sample_steps) - 1 - start_idx
+    #     sample_steps = sample_steps[start_idx:]
 
-    if model_class.__name__ == "DDPM":
-        sample_steps = None
+    # if model_class.__name__ == "DDPM":
+    #     sample_steps = None
 
-    print(kernel_size)
+    # print(kernel_size)
     # print("factor_only:\t", factor_only)
     # print("stride=ks:\t", stride_equal_to_kernel_size)
-    print("sample_steps:\t", sample_steps)
+    # print("sample_steps:\t", sample_steps)
 
     trainer = Trainer(devices=[args.gpu], fast_dev_run=args.smoke_test)
     avg_m = []
@@ -113,6 +119,18 @@ def main(args):
             sigmas = torch.zeros_like(diff.betas)
         else:
             sigmas = torch.linspace(0.2, 0.1, len(diff.betas))
+        
+        if args.num_diff_steps ==1.0:
+            sample_steps = None
+        else:
+            sample_steps = list(range(diffusion_steps))
+            sample_steps = np.random.permutation(sample_steps)
+            sample_steps = sample_steps[:int(len(sample_steps)*args.num_diff_steps)]
+            sample_steps = sample_steps.astype(int)
+            sample_steps = sample_steps.tolist()
+            if 0 not in sample_steps:
+                sample_steps.append(0)
+        
 
         # FOR MAD
         diff.config_sampling(
@@ -138,80 +156,58 @@ def main(args):
         # print(y_syn.shape)
         # y_pred = torch.concat(y_pred, dim=1).detach()
         y_real = torch.concat(y_real).detach()
-        # print(y_real_tstr.shape)
-        # y_real_train = torch.concat(y_real_train).detach()
-        # print(y_real_train.shape)
 
         all_m = []
         for n in range(args.n_sample):
-            # m_tstr_lt = tstr_dlinear(
-            #     y_syn[n],
-            #     y_real_tstr,
-            #     seq_len=seq_length // 2,
-            #     pred_len=seq_length // 2,
-            #     device=device,
-            # )
-            # m_tstr_st = tstr_dlinear(
-            #     y_syn[n],
-            #     y_real_tstr,
-            #     seq_len=seq_length // 2,
-            #     pred_len=24,
-            #     device=device,
-            # )
-            m_stat = sr_metrics(
-                y_syn[n], y_real, kernel_size=args.kernel_size, autoencoder=ae
-            )
-            all_m.append(np.array([*m_stat]).reshape(1, -1))
+            if args.model_name == "DDPM":
+                y_syn[n] = (y_syn[n] - y_syn[n].mean(dim=1, keepdim=True)) / torch.sqrt(
+                    torch.var(y_syn[n], dim=1, keepdim=True, unbiased=False) + 1e-6
+                )
+                y_syn[n] = (
+                    y_syn[n]
+                    * torch.sqrt(
+                        torch.var(y_real, dim=1, keepdim=True, unbiased=False) + 1e-6
+                    )
+                ) + y_real.mean(dim=1, keepdim=True)
+
+            m_stat = ablation_metrics(y_syn[n], y_real, ae)
+            # m_stat = context_fid(y_syn[n], y_real, ae)
+            all_m.append(np.array(m_stat).reshape(1, -1))
         all_m = np.concatenate(all_m).mean(axis=0)
         print(all_m)
-        # if i == 0:
-
-        # print(y_pred.shape)
-        # print(y_real_tstr.shape)
-        # print("Calculate Metrics")
-        # m = sr_metrics(y_pred, y_real, args.kernel_size)
-        avg_m.append(all_m)
-        out_name = [
-            # f"initmodel_{model_args.model}" if args.init_model else "",
-            f"cond_{args.condition}",
-            f"startks_{args.start_ks}",
-            f"fast_{args.fast_sample}",
-            f"dtm_{args.deterministic}",
-            # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
-        ]
-        out_name = "_".join(out_name)
-
-        if i in [0, "t"]:
-            print("plotting")
-            plot_fcst(
-                y_syn[0].cpu().numpy(),
-                y_real.cpu().numpy(),
-                y_pred_point=y_syn,
-                kernel_size=kernel_size,
-                save_name=os.path.join(
-                    exp_path,
-                    f"{out_name}.png",
-                ),
-            )
+        if i == 0:
             try:
                 np.save(
                     os.path.join(
                         exp_path,
-                        f"{out_name}_pred.npy",
+                        f"{out_name}_syn.npy",
                     ),
                     y_syn.squeeze(0).cpu().numpy(),
                 )
             except:
                 print("Cannot save")
-        if args.smoke_test:
-            break
+        # print(y_pred.shape)
+        # print(y_real_tstr.shape)
+        # print("Calculate Metrics")
+        # m = sr_metrics(y_pred, y_real, args.kernel_size)
+        avg_m.append(all_m)
+        # out_name = [
+        #     # f"initmodel_{model_args.model}" if args.init_model else "",
+        #     f"cond_{args.condition}",
+        #     f"startks_{args.start_ks}",
+        #     f"fast_{args.fast_sample}",
+        #     f"dtm_{args.deterministic}",
+        #     # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
+        # ]
+        # out_name = "_".join(out_name)
+
     avg_m = np.array(avg_m)
     print(avg_m.mean(axis=0))
     if (args.num_train == 5) and (not args.smoke_test):
         np.save(
             os.path.join(
                 exp_path,
-                f"{out_name}.npy",
+                f"{out_name}_metric.npy",
             ),
             avg_m,
         )
@@ -232,10 +228,10 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", type=int, default=0)
     # Define overrides with dot notation
     parser.add_argument("--deterministic", action="store_true")
-    parser.add_argument("--fast_sample", action="store_true")
     parser.add_argument("--smoke_test", action="store_true")
     parser.add_argument("--n_sample", type=int, default=1)
     parser.add_argument("--w_cond", type=float, default=0.5)
+    parser.add_argument("--num_diff_steps", type=float, default=1.0)
 
     # Define overrides on dataset
     parser.add_argument("--condition", type=str, choices=["sr", "fcst"])

@@ -20,6 +20,7 @@ def get_schedule(noise_name, n_steps, check_pth, **kwargs):
         # return 0
         # return torch.load(file_name)
     else:
+        os.makedirs(check_pth, exist_ok=True)
         if noise_name in ["linear", "cosine", "zero"]:
             fn = getattr(thismodule, noise_name + "_schedule")
             noise_schedule = fn(n_steps)
@@ -27,9 +28,10 @@ def get_schedule(noise_name, n_steps, check_pth, **kwargs):
             # return 0
             # return noise_schedule
 
-        elif noise_name == "std":
+        elif noise_name in ["std", "ma_lin"]:
             assert kwargs.get("train_dl") is not None
-            noise_schedule = std_schedule(n_steps, kwargs.get("train_dl"))
+            fn = getattr(thismodule, noise_name + "_schedule")
+            noise_schedule = fn(n_steps, kwargs.get("train_dl"))
             torch.save(noise_schedule, file_name)
             # return 0
             # return noise_schedule
@@ -162,7 +164,7 @@ def std_schedule(n_steps, train_dl):
     # first step is original data
     interp_all_K = interp_all_K[1:]
 
-    for j in range(len(interp_all_K)):
+    for j in tqdm.tqdm(range(len(interp_all_K))):
         x_avg = interp_all_K[j] @ all_x
         std_avg = torch.sqrt(torch.var(x_avg, dim=1, unbiased=False) + 1e-5)
         ratio = std_avg / orig_std
@@ -187,6 +189,40 @@ def std_schedule(n_steps, train_dl):
         "betas": torch.sqrt(1 - all_ratio**2).float(),
     }
     return all_ratio, torch.sqrt(1 - all_ratio**2)
+
+
+def ma_lin_schedule(n_steps, train_dl):
+    batch = next(iter(train_dl))
+    seq_length = batch["x"].shape[1]
+    # all_x = torch.concat([batch["x"] for batch in train_dl])
+
+    # orig_std = torch.sqrt(torch.var(all_x, dim=1, unbiased=False) + 1e-5)
+    kernel_list = get_factors(seq_length)
+    all_K = torch.stack(
+        [MovingAvgTime(j, seq_length=seq_length, stride=j).K for j in kernel_list]
+    )
+    all_K = (
+        all_K.flatten(1).unsqueeze(0).permute(0, 2, 1)
+    )  # [1, seq_len*seq_len, n_factors]
+    interp_all_K = (
+        torch.nn.functional.interpolate(
+            all_K, size=n_steps + 1, mode="linear", align_corners=True
+        )
+        .squeeze()
+        .reshape(seq_length, seq_length, -1)
+        .permute(2, 0, 1)
+    )  # [n_steps + 1, seq_len, seq_len]
+
+    # first step is original data
+    interp_all_K = interp_all_K[1:]
+    betas = torch.sqrt(1 - linear_schedule(n_steps)["alpha_bars"]).reshape(-1,1)
+
+    return {
+        "alpha_bars": None,
+        "beta_bars": None,
+        "alphas": interp_all_K,
+        "betas": betas.float(),
+    }
 
 
 # def std_schedule(
