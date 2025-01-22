@@ -42,6 +42,7 @@ def main(args):
         f"startks_{args.start_ks}",
         f"fast_{args.fast_sample}",
         f"dtm_{args.deterministic}",
+        f"nsample_{args.n_sample}",
         # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
     ]
     out_name = "_".join(out_name)
@@ -126,6 +127,8 @@ def main(args):
         y_pred = torch.concat(y_pred, dim=1)
         for b in test_dl:
             y_real.append(b["x"])
+            if args.smoke_test:
+                break
         y_real = torch.concat(y_real)
         # y_pred = y_pred.cpu().numpy()
         # y_real = y_real.cpu().numpy()
@@ -145,6 +148,10 @@ def main(args):
                     f"{out_name}.png",
                 ),
             )
+            np.save(os.path.join(
+                exp_path,
+                f"{out_name}_pred.npy",
+            ),y_pred)
         if args.smoke_test:
             break
     avg_m = np.array(avg_m)

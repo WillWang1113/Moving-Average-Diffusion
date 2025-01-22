@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 
+from matplotlib import pyplot as plt
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -49,6 +50,7 @@ def main(args):
         f"startks_{args.start_ks}",
         f"fast_{args.fast_sample}",
         f"dtm_{args.deterministic}",
+        f"strategy_{args.strategy}",
         # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
     ]
     out_name = "_".join(out_name)
@@ -121,6 +123,7 @@ def main(args):
             sigmas=sigmas,
             sample_steps=sample_steps,
             condition=args.condition,
+            strategy=args.strategy
         )
         diff.eval()
         print("Finish Config Model")
@@ -138,6 +141,12 @@ def main(args):
         # print(y_syn.shape)
         # y_pred = torch.concat(y_pred, dim=1).detach()
         y_real = torch.concat(y_real).detach()
+        # print(y_real.shape)
+        # print(y_syn[0])
+        # fig, ax = plt.subplots()
+        # ax.plot(y_syn[0,0].flatten().cpu())
+        # ax.plot(y_real[0].flatten().cpu())
+        # fig.savefig('debug.png')
         # print(y_real_tstr.shape)
         # y_real_train = torch.concat(y_real_train).detach()
         # print(y_real_train.shape)
@@ -171,15 +180,16 @@ def main(args):
         # print("Calculate Metrics")
         # m = sr_metrics(y_pred, y_real, args.kernel_size)
         avg_m.append(all_m)
-        out_name = [
-            # f"initmodel_{model_args.model}" if args.init_model else "",
-            f"cond_{args.condition}",
-            f"startks_{args.start_ks}",
-            f"fast_{args.fast_sample}",
-            f"dtm_{args.deterministic}",
-            # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
-        ]
-        out_name = "_".join(out_name)
+        # out_name = [
+        #     # f"initmodel_{model_args.model}" if args.init_model else "",
+        #     f"cond_{args.condition}",
+        #     f"startks_{args.start_ks}",
+        #     f"fast_{args.fast_sample}",
+        #     f"dtm_{args.deterministic}",
+        #     f"strategy_{args.strategy}",
+        #     # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
+        # ]
+        # out_name = "_".join(out_name)
 
         if i in [0, "t"]:
             print("plotting")
@@ -239,6 +249,7 @@ if __name__ == "__main__":
 
     # Define overrides on dataset
     parser.add_argument("--condition", type=str, choices=["sr", "fcst"])
+    parser.add_argument("--strategy", type=str, choices=["ddpm", "ddim"])
     parser.add_argument("--start_ks", type=int)
     parser.add_argument("--kernel_size", type=int)
     parser.add_argument("--pred_len", type=int)

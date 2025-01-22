@@ -53,18 +53,20 @@ def main(args):
         f"fast_{args.fast_sample}",
         # ! Force align
         f"rds_{args.num_diff_steps}",
+        f"strategy_{args.strategy}"
+        f"nsample_{args.n_sample}"
         # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
     ]
     out_name = "_".join(out_name)
     print(out_name)
-    if (args.num_train == 5) and os.path.exists(
-        os.path.join(
-            exp_path,
-            f"{out_name}_metric.npy",
-        ),
-    ):
-        print("already have metrics.")
-        return 0
+    # if (args.num_train == 5) and os.path.exists(
+    #     os.path.join(
+    #         exp_path,
+    #         f"{out_name}_metric.npy",
+    #     ),
+    # ):
+    #     print("already have metrics.")
+    #     return 0
     _, train_dl = data_provider(data_config, "train")
     _, test_dl = data_provider(data_config, "test")
     ae_ckpt = os.path.join(root_path, "ae.ckpt")
@@ -164,6 +166,7 @@ def main(args):
                 # sigmas=sigmas,
                 sample_steps=sample_steps,
                 condition=args.condition,
+                # strategy=args.strategy
             )
             diff.eval()
             print("Finish Config Model")
@@ -178,17 +181,17 @@ def main(args):
             avg_m.append(np.array(m_stat).reshape(1, -1))
             
 
-        if i == 0:
-            try:
-                np.save(
-                    os.path.join(
-                        exp_path,
-                        f"{out_name}_syn.npy",
-                    ),
-                    y_syn.squeeze(0).cpu().numpy(),
-                )
-            except:
-                print("Cannot save")
+        # if i == 0:
+        #     try:
+        #         np.save(
+        #             os.path.join(
+        #                 exp_path,
+        #                 f"{out_name}_syn.npy",
+        #             ),
+        #             y_syn.squeeze(0).cpu().numpy(),
+        #         )
+        #     except:
+        #         print("Cannot save")
         # print(y_pred.shape)
         # print(y_real_tstr.shape)
         # print("Calculate Metrics")
@@ -206,14 +209,14 @@ def main(args):
 
     avg_m = np.array(avg_m).flatten()
     print(avg_m.mean())
-    if (args.num_train == 5) and (not args.smoke_test):
-        np.save(
-            os.path.join(
-                exp_path,
-                f"{out_name}_metric.npy",
-            ),
-            avg_m,
-        )
+    # if (args.num_train == 5) and (not args.smoke_test):
+    np.save(
+        os.path.join(
+            exp_path,
+            f"{out_name}_metric.npy",
+        ),
+        avg_m,
+    )
 
 
 if __name__ == "__main__":
@@ -236,6 +239,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_sample", type=int, default=1)
     parser.add_argument("--w_cond", type=float, default=0.5)
     parser.add_argument("--num_diff_steps", type=float, default=1.0)
+    parser.add_argument("--strategy", type=str, choices=["ddpm", "ddim"], default='ddpm')
 
     # Define overrides on dataset
     parser.add_argument("--condition", type=str, choices=["sr", "fcst"])

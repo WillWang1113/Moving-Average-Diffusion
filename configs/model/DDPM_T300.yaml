@@ -15,7 +15,7 @@ diff_config:
   noise_schedule: cosine
   norm: off
   pred_x0: off
-  T: 200
+  T: 300
 
 train_config:
   epochs: 100

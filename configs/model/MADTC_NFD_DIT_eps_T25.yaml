@@ -11,11 +11,11 @@ bb_config:
   freq_denoise: off
 
 diff_config:
-  name: DDPM
-  noise_schedule: cosine
-  norm: off
-  pred_x0: off
-  T: 200
+  name: MADTC
+  noise_schedule: std
+  norm: on
+  pred_diff: on
+  T: 25
 
 train_config:
   epochs: 100

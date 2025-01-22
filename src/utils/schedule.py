@@ -112,14 +112,22 @@ def cosine_schedule(n_steps):
     betas = 1 - (
         alphas_cumprod[1:] / alphas_cumprod[:-1]
     )  # Calculate betas from alphas
-    betas = torch.clip(betas, 0.0001, 0.9999)
+    betas = torch.clip(betas, 1e-4, 1e-1)
     alphas = 1 - betas
+    alphas_bars = torch.cumprod(alphas, dim=0)
+    # alphas_bars = torch.clip(alphas_bars, 0.01, 0.99)
     return {
-        "alpha_bars": alphas.float(),
-        "beta_bars": betas.float(),
-        "alphas": alphas_cumprod[1:].float(),
-        "betas": torch.sqrt(1 - alphas_cumprod[1:]).float(),
+        "alpha_bars": alphas_bars.float(),
+        "beta_bars": None,
+        "alphas": alphas.float(),
+        "betas": betas.float(),
     }
+    # return {
+    #     "alpha_bars": alphas.float(),
+    #     "beta_bars": betas.float(),
+    #     "alphas": alphas_cumprod[1:].float(),
+    #     "betas": torch.sqrt(1 - alphas_cumprod[1:]).float(),
+    # }
 
     return (
         alphas,

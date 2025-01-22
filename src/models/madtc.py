@@ -258,7 +258,7 @@ class MADTC(L.LightningModule):
         w_cond: float = 1,
         sigmas: torch.Tensor = None,
         sample_steps=None,
-        condition=None,
+        condition=None, **kwargs
     ):
         assert condition in ["fcst", "sr", None]
         self.condition = condition

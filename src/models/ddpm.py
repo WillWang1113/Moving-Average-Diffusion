@@ -105,35 +105,64 @@ class DDPM(L.LightningModule):
                 t_tensor = torch.tensor(t, device=x.device).repeat(x.shape[0])
                 eps_theta, mu, std = self.backbone(x, t_tensor, cond)
 
-                if self.pred_x0:
-                    if t > 0:
-                        mu_pred = (
-                            torch.sqrt(self.alphas[t])
-                            * (1 - self.alpha_bars[t - 1])
-                            * x
-                            + torch.sqrt(self.alpha_bars[t - 1])
-                            * self.betas[t]
-                            * eps_theta
-                        )
-                        mu_pred = mu_pred / (1 - self.alpha_bars[t])
+                if self.strategy == "ddpm":
+                    if self.pred_x0:
+                        if t > 0:
+                            mu_pred = (
+                                torch.sqrt(self.alphas[t])
+                                * (1 - self.alpha_bars[t - 1])
+                                * x
+                                + torch.sqrt(self.alpha_bars[t - 1])
+                                * self.betas[t]
+                                * eps_theta
+                            )
+                            mu_pred = mu_pred / (1 - self.alpha_bars[t])
+                        else:
+                            mu_pred = eps_theta
                     else:
-                        mu_pred = eps_theta
+                        mu_pred = (
+                            x
+                            - (1 - self.alphas[t])
+                            / torch.sqrt(1 - self.alpha_bars[t])
+                            * eps_theta
+                        ) / torch.sqrt(self.alphas[t])
+                    if t == 0:
+                        sigma = 0
+                    else:
+                        sigma = torch.sqrt(
+                            (1 - self.alpha_bars[t - 1])
+                            / (1 - self.alpha_bars[t])
+                            * self.betas[t]
+                        )
+                    # print(t)
+                    # print(sigma)
+                    x = mu_pred + sigma * z
                 else:
-                    mu_pred = (
-                        x
-                        - (1 - self.alphas[t])
-                        / torch.sqrt(1 - self.alpha_bars[t])
-                        * eps_theta
-                    ) / torch.sqrt(self.alphas[t])
-                if t == 0:
-                    sigma = 0
-                else:
-                    sigma = torch.sqrt(
-                        (1 - self.alpha_bars[t - 1])
-                        / (1 - self.alpha_bars[t])
-                        * self.betas[t]
-                    )
-                x = mu_pred + sigma * z
+                    # print("DDIM!!!!!!!!!!!!!!!!")
+                    if self.pred_x0:
+                        pass
+                    else:
+                        eps_theta = (
+                            x - torch.sqrt(1 - self.alpha_bars[t]) * eps_theta
+                        ) / torch.sqrt(self.alpha_bars[t])
+                    # print(t)
+                    # print(eps_theta[0, :5])
+
+                    if t > 0:
+                        # print((torch.sqrt(self.alpha_bars[t - 1]) * eps_theta)[0, :5])
+                        # print(
+                        #     torch.sqrt(1 - self.alpha_bars[t - 1])
+                        #     / torch.sqrt(1 - self.alpha_bars[t])
+                        # )
+                        # print((x - torch.sqrt(self.alpha_bars[t]) * eps_theta)[0, :5])
+                        x = torch.sqrt(self.alpha_bars[t - 1]) * eps_theta + torch.sqrt(
+                            1 - self.alpha_bars[t - 1]
+                        ) / torch.sqrt(1 - self.alpha_bars[t]) * (
+                            x - torch.sqrt(self.alpha_bars[t]) * eps_theta)
+                        
+                    else:
+                        x = eps_theta
+                    # print(x[0, :5])
 
             # uncond generation
             if self.condition is None:
@@ -216,17 +245,20 @@ class DDPM(L.LightningModule):
         # shape = (self.n_sample, x.shape[0], x.shape[1], x.shape[2])
         # return torch.randn(shape, device=x.device)
 
-    def config_sampling(self, n_sample, condition, init_distribs=None, **kwargs):
+    def config_sampling(
+        self, n_sample, condition, strategy="ddpm", init_distribs=None, **kwargs
+    ):
         self.n_sample = n_sample
         assert condition in ["fcst", "sr", None]
+        assert strategy in ["ddpm", "ddim"]
         self.condition = condition
+        self.strategy = strategy
         if self.condition is None:
             if self.norm:
                 assert init_distribs is not None
                 self.init_mu_dist = init_distribs[0]
                 self.init_std_dist = init_distribs[1]
         self._sample_ready = True
-            
 
     def _normalize(self, x):
         mean = torch.mean(x, dim=1, keepdim=True)

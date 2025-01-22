@@ -173,3 +173,6 @@ lightning_logs/
 base_ckpt/
 checkpoints/
 savings/
+*.pt
+intro_analysis*/
+# intro_analysis_*/
