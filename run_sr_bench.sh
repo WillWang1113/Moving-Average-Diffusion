@@ -1,13 +1,15 @@
 #!/bin/bash
 
 gpu=1
-model_config=(DDPM_T100)
+model_config=(DDPM)
 pred_len=576
-num_train=5
-save_dir=/home/user/data/MAD_sr_benchcos/savings
+num_train=1
+save_dir=savings/sr
+# save_dir=/home/user/data/MAD_sr_benchcos/savings
+# kernel_size=(3)
 kernel_size=(3 6 12)
 n_sample=10
-data_pth=(solar)
+data_pth=(wind solar mfred)
 
 for mc in "${model_config[@]}"; do
   for dataset in "${data_pth[@]}"; do

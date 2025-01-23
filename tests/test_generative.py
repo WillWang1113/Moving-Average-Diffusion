@@ -37,7 +37,7 @@ if __name__ == "__main__":
     # base_model_name = "MADtime_pl_FactOnly_FreqDoi"
     # base_model_name = "MADfreq"
     # base_model_name = "MADfreq_FactOnly"
-    model_name = "MADTC_NFD_MLP_x0_bs64_condfcst"
+    model_name = "MADTC_NFD_MLP_x0_bs256_condfcst"
     # base_model_name = "MADfreq_puncond0.5"
     # base_model_name = "MADfreq_FactOnly_puncond0.5"
 
@@ -75,7 +75,7 @@ if __name__ == "__main__":
             # )
 
             result_path = os.path.join(
-                save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_True_dtm_True.npy"
+                save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_True_dtm_True_nsample_100.npy"
             )
             # result_path = os.path.join(
             #     save_dir, f"{real_d}_{pl}_S", model_name, "cond_fcst_startks_None_fast_True_dtm_True.npy"
@@ -87,7 +87,7 @@ if __name__ == "__main__":
             df = pd.DataFrame(results, columns=["MAE", "MSE", "CRPS"])
             df = df.drop(columns=["MAE"])
             # print(df.std())
-            df_mean = df.std()
+            df_mean = df.mean()
             df_mean["method"] = model_name
             df_mean["pred_len"] = pl
             df_mean = pd.DataFrame(df_mean).T
@@ -101,10 +101,10 @@ if __name__ == "__main__":
         ds_df = ds_df.set_index(["dataset", "pred_len"])
         all_df.append(ds_df)
     all_df = pd.concat(all_df)
-    # print(all_df)
+    print(all_df)
     # print(f"assets/{model_name}_std.csv")
     # all_df.to_csv(f"assets/{model_name}_fastfalse.csv")
-    all_df.to_csv(f"assets/{model_name}_fcst_std.csv")
+    all_df.to_csv(f"assets/{model_name}_fcst_mean.csv")
 
     # all_bench_df = pd.read_csv(
     #     '/mnt/ExtraDisk/wcx/research/benchmarks/bench_result.csv',
