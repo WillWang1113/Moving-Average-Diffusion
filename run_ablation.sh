@@ -11,7 +11,7 @@ ratio_diff_steps=(0.9 0.7 0.5 0.3 0.1 0.02 0.05)
 # model_config=(DDPM_MA DDPM_MA_stdsched)
 # model_config=(DDPM_norm_MA DDPM_norm_MA_stdsched)
 
-save_dir=savings/MAD_ablation/savings
+save_dir=savings/ablation
 num_train=5
 pred_len=(576)
 seq_len=0
@@ -65,16 +65,16 @@ ratio_diff_steps=(1.0)
 # model_config=(DDPM_MA DDPM_MA_stdsched)
 # model_config=(DDPM_norm_MA DDPM_norm_MA_stdsched)
 
-save_dir=/home/user/data/MAD_ablation/savings
-num_train=5
-pred_len=(576)
-seq_len=0
-n_sample=100
-data_pth=(
-  wind
-  mfred
-  solar
-)
+# save_dir=/home/user/data/MAD_ablation/savings
+# num_train=5
+# pred_len=(576)
+# seq_len=0
+# n_sample=100
+# data_pth=(
+  # wind
+  # mfred
+  # solar
+# )
 
 # Modules
 for mc in "${model_config[@]}"; do

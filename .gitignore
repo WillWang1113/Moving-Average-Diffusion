@@ -254,3 +254,4 @@ configs/model/MADTC_NFD_DIT_x0.yaml
 configs/model/MADTC_NFD_MLP_eps.yaml
 configs/model/MADTC_NFD_MLP_x0.yaml
 notebooks/
+run_sr_bench.sh
