@@ -14,7 +14,7 @@ for mc in "${model_config[@]}"; do
 
     for ks in "${kernel_size[@]}"; do
 
-      python -u scripts/train_pl_sr.py \
+      python -u scripts/train_sr.py \
         -dc $dataset \
         -mc $mc \
         --save_dir $save_dir \
@@ -22,7 +22,7 @@ for mc in "${model_config[@]}"; do
         --gpu $gpu --num_train $num_train --batch_size 64 \
         --condition sr --kernel_size $ks
 
-      python scripts/sample_pl_new_c_sr.py -dc $dataset \
+      python scripts/sample_sr.py -dc $dataset \
         --model_name "${mc}_bs64_condsr_ks${ks}" \
         --num_train $num_train \
         --save_dir $save_dir \

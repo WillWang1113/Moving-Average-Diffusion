@@ -28,7 +28,7 @@ for mc in "${model_config[@]}"; do
     for j in "${data_pth[@]}"; do
       echo $j $i $mc
 
-      python -u scripts/train_pl_fcst.py \
+      python -u scripts/train_fcst.py \
         -dc $j \
         -mc $mc \
         --save_dir $save_dir \
@@ -36,7 +36,7 @@ for mc in "${model_config[@]}"; do
         --pred_len $i \
         --gpu $gpu --num_train $num_train --batch_size 256 --condition fcst
 
-      python scripts/sample_pl_new_c.py -dc $j \
+      python scripts/sample_fcst.py -dc $j \
         --model_name "${mc}_bs256_condfcst" \
         --num_train $num_train \
         --save_dir $save_dir \

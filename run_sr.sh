@@ -20,7 +20,7 @@ n_sample=10
 for mc in "${model_config[@]}"; do
   for dataset in "${data_pth[@]}"; do
 
-    python -u scripts/train_pl_sr.py \
+    python -u scripts/train_sr.py \
       -dc $dataset \
       -mc $mc \
       --save_dir $save_dir \
@@ -29,7 +29,7 @@ for mc in "${model_config[@]}"; do
 
     for ks in "${kernel_size[@]}"; do
       echo $ks $mc
-      python scripts/sample_pl_new_c_sr.py -dc $dataset \
+      python scripts/sample_sr.py -dc $dataset \
         --model_name "${mc}_bs64_condNone_ksNone" \
         --num_train $num_train \
         --save_dir $save_dir \
