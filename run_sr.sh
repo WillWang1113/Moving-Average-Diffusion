@@ -20,12 +20,12 @@ n_sample=10
 for mc in "${model_config[@]}"; do
   for dataset in "${data_pth[@]}"; do
 
-    # python -u scripts/train_pl_sr.py \
-    #   -dc $dataset \
-    #   -mc $mc \
-    #   --save_dir $save_dir \
-    #   --pred_len $pred_len \
-    #   --gpu $gpu --num_train $num_train --batch_size 64
+    python -u scripts/train_pl_sr.py \
+      -dc $dataset \
+      -mc $mc \
+      --save_dir $save_dir \
+      --pred_len $pred_len \
+      --gpu $gpu --num_train $num_train --batch_size 64
 
     for ks in "${kernel_size[@]}"; do
       echo $ks $mc

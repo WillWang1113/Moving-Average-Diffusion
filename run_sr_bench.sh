@@ -22,16 +22,16 @@ for mc in "${model_config[@]}"; do
         --gpu $gpu --num_train $num_train --batch_size 64 \
         --condition sr --kernel_size $ks
 
-      # python scripts/sample_pl_new_c_sr.py -dc $dataset \
-      #   --model_name "${mc}_bs64_condsr_ks${ks}" \
-      #   --num_train $num_train \
-      #   --save_dir $save_dir \
-      #   --condition sr \
-      #   --w_cond 0 \
-      #   --pred_len $pred_len \
-      #   --n_sample $n_sample \
-      #   --deterministic \
-      #   --gpu $gpu --kernel_size $ks --start_ks $ks --strategy ddpm
+      python scripts/sample_pl_new_c_sr.py -dc $dataset \
+        --model_name "${mc}_bs64_condsr_ks${ks}" \
+        --num_train $num_train \
+        --save_dir $save_dir \
+        --condition sr \
+        --w_cond 0 \
+        --pred_len $pred_len \
+        --n_sample $n_sample \
+        --deterministic \
+        --gpu $gpu --kernel_size $ks --start_ks $ks --strategy ddpm
     done
   done
 done
