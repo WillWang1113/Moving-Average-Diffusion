@@ -1,6 +1,4 @@
 einops==0.8.1
-flow_matching==1.0.10
-gluonts==0.15.1
 lightning==2.1.4
 matplotlib==3.8.4
 neuralforecast==1.7.3

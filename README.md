@@ -8,7 +8,7 @@ Python version: 3.10
 
 The must-have packages can be installed by running
 ```
-pip install requirements.txt
+pip install -r requirements.txt
 python setup.py develop
 ```
 

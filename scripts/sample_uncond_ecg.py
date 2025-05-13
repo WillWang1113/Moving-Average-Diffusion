@@ -125,7 +125,6 @@ def main(args):
     print(sample_steps)
 
     trainer = Trainer(devices=[args.gpu], fast_dev_run=args.smoke_test)
-    avg_m = []
 
     for i in range(args.num_train):
         print("runtime:\t", i)
@@ -159,11 +158,9 @@ def main(args):
 
         y_syn = trainer.predict(diff, test_dl)
         y_syn = torch.concat(y_syn, dim=1).detach()
-        # y_pred = trainer.predict(diff, test_dl)
 
         y_real = torch.concat(y_real).detach()
 
-        all_m = []
         for n in range(args.n_sample):
             if args.model_name.__contains__("DDPM"):
                 y_syn[n] = (y_syn[n] - y_syn[n].mean(dim=1, keepdim=True)) / torch.sqrt(
@@ -176,12 +173,7 @@ def main(args):
                     )
                 ) + y_real.mean(dim=1, keepdim=True)
 
-            m_stat = ablation_metrics(y_syn[n], y_real, ae)
-            # m_stat = context_fid(y_syn[n], y_real, ae)
-            all_m.append(np.array(m_stat).reshape(1, -1))
-        all_m = np.concatenate(all_m).mean(axis=0)
-        print(all_m)
-        # if i == 0:
+
         try:
             np.save(
                 os.path.join(

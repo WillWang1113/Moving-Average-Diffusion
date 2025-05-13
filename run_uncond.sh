@@ -1,6 +1,6 @@
 #!/bin/bash
 
-gpu=0
+gpu=1
 model_config=(MATSD_uncond)
 
 save_dir=/home/user/data2/ICML_camera_ready_test/uncond
@@ -29,7 +29,7 @@ for mc in "${model_config[@]}"; do
         --seq_len $seq_len \
         --gpu $gpu --num_train $num_train --batch_size 64
 
-      python scripts/rebuttal_sample_uncond.py -dc $j \
+      python scripts/sample_uncond.py -dc $j \
         --model_name $mc \
         --num_train $num_train \
         --save_dir $save_dir \
@@ -47,14 +47,14 @@ done
 # Training and sampling for ecg
 python -u scripts/train_uncond_ecg.py \
   -dc ecg \
-  -mc DDPM_IN_MA \
+  -mc MATSD_uncond \
   --save_dir $save_dir \
   --pred_len 24 \
   --seq_len $seq_len \
   --gpu $gpu --num_train $num_train --batch_size 64
 
 python scripts/sample_uncond_ecg.py -dc ecg \
-  --model_name DDPM_IN_MA \
+  --model_name MATSD_uncond \
   --num_train $num_train \
   --save_dir $save_dir \
   --w_cond 0 \
