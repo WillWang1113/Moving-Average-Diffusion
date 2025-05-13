@@ -3,8 +3,6 @@ import numpy as np
 import torch
 from neuralforecast.losses.numpy import mae, mqloss, mse
 import tqdm
-from src.layers.Autoformer_EncDec import series_decomp
-from torch.utils.data import DataLoader, TensorDataset
 
 from torch import nn
 import lightning as L
@@ -88,81 +86,6 @@ def calculate_metrics(
     return (MAE, MSE, MQL), y_pred_q, y_pred_point
 
 
-class Model(nn.Module):
-    """
-    Paper link: https://arxiv.org/pdf/2205.13504.pdf
-    """
-
-    def __init__(self, seq_len, pred_len, enc_in, moving_avg=25, individual=False):
-        """
-        individual: Bool, whether shared model among different variates.
-        """
-        super(Model, self).__init__()
-        self.seq_len = seq_len
-
-        self.decompsition = series_decomp(moving_avg)
-        self.individual = individual
-        self.channels = enc_in
-        self.pred_len = pred_len
-
-        if self.individual:
-            self.Linear_Seasonal = nn.ModuleList()
-            self.Linear_Trend = nn.ModuleList()
-
-            for i in range(self.channels):
-                self.Linear_Seasonal.append(nn.Linear(self.seq_len, self.pred_len))
-                self.Linear_Trend.append(nn.Linear(self.seq_len, self.pred_len))
-
-                self.Linear_Seasonal[i].weight = nn.Parameter(
-                    (1 / self.seq_len) * torch.ones([self.pred_len, self.seq_len])
-                )
-                self.Linear_Trend[i].weight = nn.Parameter(
-                    (1 / self.seq_len) * torch.ones([self.pred_len, self.seq_len])
-                )
-        else:
-            self.Linear_Seasonal = nn.Linear(self.seq_len, self.pred_len)
-            self.Linear_Trend = nn.Linear(self.seq_len, self.pred_len)
-
-            self.Linear_Seasonal.weight = nn.Parameter(
-                (1 / self.seq_len) * torch.ones([self.pred_len, self.seq_len])
-            )
-            self.Linear_Trend.weight = nn.Parameter(
-                (1 / self.seq_len) * torch.ones([self.pred_len, self.seq_len])
-            )
-
-    def encoder(self, x):
-        seasonal_init, trend_init = self.decompsition(x)
-        seasonal_init, trend_init = (
-            seasonal_init.permute(0, 2, 1),
-            trend_init.permute(0, 2, 1),
-        )
-        if self.individual:
-            seasonal_output = torch.zeros(
-                [seasonal_init.size(0), seasonal_init.size(1), self.pred_len],
-                dtype=seasonal_init.dtype,
-            ).to(seasonal_init.device)
-            trend_output = torch.zeros(
-                [trend_init.size(0), trend_init.size(1), self.pred_len],
-                dtype=trend_init.dtype,
-            ).to(trend_init.device)
-            for i in range(self.channels):
-                seasonal_output[:, i, :] = self.Linear_Seasonal[i](
-                    seasonal_init[:, i, :]
-                )
-                trend_output[:, i, :] = self.Linear_Trend[i](trend_init[:, i, :])
-        else:
-            seasonal_output = self.Linear_Seasonal(seasonal_init)
-            trend_output = self.Linear_Trend(trend_init)
-        x = seasonal_output + trend_output
-        x = x.permute(0, 2, 1)
-        return x
-
-    def forward(self, x_enc: torch.Tensor):
-        # Encoder
-        x = self.encoder(x_enc)
-        return x
-
-
 def consistency_error(y_pred, y_real, kernel_size):
     # input: low-res data
     lr_y_real = torch.nn.functional.avg_pool1d(
@@ -189,43 +112,6 @@ def log_spectral_distance(y_pred, y_real):
     # Compute the log-spectral distance
     lsd = torch.sqrt(torch.sum(SE, dim=1))
     return lsd.mean().cpu().numpy()
-
-
-def tstr_dlinear(y_syn, y_real, seq_len=96, pred_len=16, device="cpu"):
-    y_syn = y_syn[:, : seq_len + pred_len, :]
-    y_real = y_real[:, : seq_len + pred_len, :]
-    # n_data = len(y_syn)
-    x_train = y_syn[:, :seq_len]
-    y_train = y_syn[:, seq_len:]
-    x_test = y_real[:, :seq_len]
-    y_test = y_real[:, seq_len:]
-
-    train_dl = TensorDataset(x_train, y_train)
-    train_dl = DataLoader(train_dl, batch_size=64, shuffle=True)
-
-    test_dl = TensorDataset(x_test, y_test)
-    test_dl = DataLoader(test_dl, batch_size=256, shuffle=False)
-    # test_dl = TensorDataset(x_test, y_test)
-    model = Model(seq_len, pred_len, enc_in=y_syn.shape[-1]).to(device)
-    optim = torch.optim.Adam(model.parameters())
-    for i in tqdm.tqdm(range(50)):
-        # train_loss_epoch = 0
-        for x, y in train_dl:
-            x = x.to(device)
-            y = y.to(device)
-            optim.zero_grad()
-            loss = torch.nn.functional.mse_loss(model(x), y)
-            loss.backward()
-            optim.step()
-            # train_loss_epoch = train_loss_epoch + loss
-        # train_loss_epoch /= len(train_dl)
-        # if (i + 1) % 10 == 0:
-        #     print(i, train_loss_epoch)
-
-    y_pred_tstr = (
-        torch.concat([model(x.to(device)) for (x, y) in test_dl]).detach().cpu().numpy()
-    )
-    return MSE(y_pred_tstr, y_test.cpu().numpy())
 
 
 def sr_metrics(y_pred, y_real, kernel_size, autoencoder):
