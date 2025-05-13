@@ -1,7 +1,6 @@
 data: ETTh2
-root_path: /home/user/workspaces/THU-timeseries
-# root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
-data_path: ETT-small/ETTh2.csv
+root_path: datasets/
+data_path: ETTh2.csv
 features: S
 target: OT
 num_workers: 1

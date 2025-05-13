@@ -1,5 +1,5 @@
 data: ECG
-root_path: assets/
+root_path: datasets/
 data_path: ecg.csv
 features: S
 target: OT

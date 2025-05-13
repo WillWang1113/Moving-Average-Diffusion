@@ -1,6 +1,5 @@
 data: custom
-root_path: /home/user/data/sr_data
-# root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
+root_path: datasets/
 data_path: solar.csv
 features: S
 target: OT

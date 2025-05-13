@@ -1,7 +1,6 @@
 data: custom
-root_path: /home/user/workspaces/THU-timeseries
-# root_path: /mnt/ExtraDisk/wcx/research/THU-timeseries
-data_path: exchange_rate/exchange_rate.csv
+root_path: datasets/
+data_path: exchange_rate.csv
 features: S
 target: OT
 num_workers: 1
