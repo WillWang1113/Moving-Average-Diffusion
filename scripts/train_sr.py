@@ -50,37 +50,16 @@ def prepare_train(model_config, data_config, args, n):
         model_config["bb_config"]["cond_seq_len"] = seq_length
 
     ns_name = model_config["diff_config"].pop("noise_schedule")
-    # n_steps = (
-    #     target_seq_length - 1
-    #     if df_.__contains__("MAD")
-    #     else model_config["diff_config"]["T"]
-    # )
+
     n_steps = model_config["diff_config"]["T"]
 
     ns_path = get_schedule(
         ns_name,
         n_steps,
         check_pth=data_folder,
-        # data_name=args["data_config"],
         train_dl=train_dl,
-        # seq_len=target_seq_length,
-        # factor_only=model_config["diff_config"].get("factor_only", None),
-        # stride_equal_to_kernel_size=model_config["diff_config"].get(
-        # "stride_equal_to_kernel_size", None
-        # ),
     )
-    # noise_schedule = get_schedule(
-    #     ns_name,
-    #     n_steps,
-    #     check_pth=data_folder,
-    #     # data_name=args["data_config"],
-    #     train_dl=train_dl,
-    #     # seq_len=target_seq_length,
-    #     # factor_only=model_config["diff_config"].get("factor_only", None),
-    #     # stride_equal_to_kernel_size=model_config["diff_config"].get(
-    #     # "stride_equal_to_kernel_size", None
-    #     # ),
-    # )
+    
     return model_config, ns_path, df, save_folder, train_dl, val_dl
 
 
@@ -104,7 +83,6 @@ def main(args, n):
     print(ns_path)
     diff = df(
         backbone_config=model_config["bb_config"],
-        # conditioner_config=model_config["cn_config"],
         ns_path=ns_path,
         lr=model_config["train_config"]["lr"],
         alpha=model_config["train_config"]["alpha"],

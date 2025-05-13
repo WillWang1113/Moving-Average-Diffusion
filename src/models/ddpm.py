@@ -235,7 +235,7 @@ class DDPM(L.LightningModule):
         x_T = torch.randn_like(x)
         if self.condition is None:
             if self.norm:
-                self.init_mean = self.init_mu_dist.sample()
+                # self.init_mean = self.init_mu_dist.sample()
                 _, (self.init_mean, self.init_std) = self._normalize(x)
         elif self.condition == "sr":
             self.init_mean = x.mean(dim=1, keepdim=True)
@@ -253,11 +253,11 @@ class DDPM(L.LightningModule):
         assert strategy in ["ddpm", "ddim"]
         self.condition = condition
         self.strategy = strategy
-        if self.condition is None:
-            if self.norm:
-                assert init_distribs is not None
-                self.init_mu_dist = init_distribs[0]
-                self.init_std_dist = init_distribs[1]
+        # if self.condition is None:
+            # if self.norm:
+                # assert init_distribs is not None
+                # self.init_mu_dist = init_distribs[0]
+                # self.init_std_dist = init_distribs[1]
         self._sample_ready = True
 
     def _normalize(self, x):

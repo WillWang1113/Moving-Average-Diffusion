@@ -1,5 +1,9 @@
 from .ddpm import DDPM
-from .madtc import MADTC
+from .matsd import MATSD
+# from .madtc_blur import MADTC_Blur
+# from .madtc_blur_freq import MADTC_BlurFreq
+# from .cfm import CFM
+# from .cfm_ma import MACFM
 # from .madt import MADT
 # from .mad_mean import MADMean
 # from .mad import MAD

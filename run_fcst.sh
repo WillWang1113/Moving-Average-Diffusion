@@ -3,10 +3,9 @@
 gpu=0
 model_config=(MATSD_fcst)
 
-save_dir=savings/fcst
+save_dir=/home/user/data2/ICML_camera_ready_test/fcst
 num_train=5
 seq_len=96
-# pred_len=(96)
 pred_len=(96 192 336 720)
 data_pth=(
   electricity

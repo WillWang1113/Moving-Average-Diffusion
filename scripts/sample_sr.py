@@ -193,7 +193,6 @@ def main(args):
                 y_syn[0].cpu().numpy(),
                 y_real.cpu().numpy(),
                 y_pred_point=y_syn,
-                kernel_size=kernel_size,
                 save_name=os.path.join(
                     exp_path,
                     f"{out_name}.png",

@@ -1,8 +1,10 @@
 import argparse
 import json
 import os
-
+import numpy as np
 import torch
+import torch.utils
+import torch.utils.data
 import yaml
 from lightning import Trainer
 from lightning.fabric import seed_everything
@@ -18,19 +20,48 @@ from src.utils.schedule import get_schedule
 def prepare_train(model_config, data_config, args, n):
     root_pth = args["save_dir"]
 
-    _, train_dl = data_provider(data_config, "train")
-    _, val_dl = data_provider(data_config, "val")
-    # _, test_dl = data_provider(data_config, "test")
+    all_data = np.loadtxt(
+        os.path.join(data_config["root_path"], data_config["data_path"]), delimiter=","
+    )
+    all_data = torch.from_numpy(all_data)
+    all_data = torch.nn.functional.interpolate(all_data.unsqueeze(1), size=24)
+
+    all_data = all_data.permute(0, 2, 1).float()
+
+    num_train = int(0.7 * len(all_data))
+    num_test = int(0.1 * len(all_data))
+    num_val = len(all_data) - num_train - num_test
+    train_data = all_data[:num_train]
+    val_data = all_data[num_train : num_train + num_val]
+    test_data = all_data[-num_test:]
+
+    class TempDataset(torch.utils.data.Dataset):
+        def __init__(self, data):
+            super().__init__()
+            self.data = data
+
+        def __getitem__(self, index):
+            return {"x": self.data[index]}
+
+        def __len__(self):
+            return len(self.data)
+
+    train_ds = TempDataset(train_data)
+    val_ds = TempDataset(val_data)
+    # test_ds = TempDataset(test_data)
+    train_dl = torch.utils.data.DataLoader(
+        train_ds, shuffle=True, batch_size=data_config["batch_size"]
+    )
+    val_dl = torch.utils.data.DataLoader(
+        val_ds, shuffle=True, batch_size=data_config["batch_size"]
+    )
+
 
     data_folder = os.path.join(
         root_pth,
-        f"{args['data_config']}_{data_config['pred_len']}_{data_config['features']}",
+        f"{args['data_config']}_24_{data_config['features']}",
     )
-    save_folder = os.path.join(
-        data_folder,
-        args["model_config"]
-        + f"_bs{data_config['batch_size']}_cond{data_config['condition']}",
-    )
+    save_folder = os.path.join(data_folder, args["model_config"])
     os.makedirs(save_folder, exist_ok=True)
     with open(os.path.join(save_folder, "config.json"), "w") as w:
         json.dump(model_config, w, indent=2)
@@ -50,14 +81,13 @@ def prepare_train(model_config, data_config, args, n):
         model_config["bb_config"]["cond_seq_len"] = seq_length
 
     ns_name = model_config["diff_config"].pop("noise_schedule")
-
     n_steps = model_config["diff_config"]["T"]
+
     ns_path = get_schedule(
         ns_name,
         n_steps,
         check_pth=data_folder,
         train_dl=train_dl,
-
     )
     return model_config, ns_path, df, save_folder, train_dl, val_dl
 
@@ -67,20 +97,22 @@ def main(args, n):
     seed_everything(n, workers=True)
 
     data_config = yaml.safe_load(
-        open(f'configs/dataset/{args["data_config"]}.yaml', "r")
+        open(f"configs/dataset/{args['data_config']}.yaml", "r")
     )
     data_config = exp_parser(data_config, args)
 
     model_config = yaml.safe_load(
-        open(f'configs/model/{args["model_config"]}.yaml', "r")
+        open(f"configs/model/{args['model_config']}.yaml", "r")
     )
     model_config = exp_parser(model_config, args)
 
     model_config, ns_path, df, save_folder, train_dl, val_dl = prepare_train(
         model_config, data_config, args, n
     )
+    print(ns_path)
     diff = df(
         backbone_config=model_config["bb_config"],
+        # conditioner_config=model_config["cn_config"],
         ns_path=ns_path,
         lr=model_config["train_config"]["lr"],
         alpha=model_config["train_config"]["alpha"],
@@ -136,8 +168,8 @@ if __name__ == "__main__":
     parser.add_argument("--pred_len", type=int)
     parser.add_argument("--seq_len", type=int)
     parser.add_argument("--batch_size", type=int)
-    parser.add_argument("--condition", type=str)
-    parser.add_argument("--kernel_size", type=int)
+    # parser.add_argument("--condition", type=str)
+    # parser.add_argument("--kernel_size", type=int)
 
     args = parser.parse_args()
     for i in range(args.num_train):

@@ -1,5 +1,7 @@
-# A Non-isotropic Time Series Diffusion Model with Moving Average Transitions
-This repo is the Pytorch implementation of the paper: A Non-isotropic Time Series Diffusion Model with Moving Average Transitions
+# (ICML2025) A Non-isotropic Time Series Diffusion Model with Moving Average Transitions
+This repo is the Pytorch implementation of our ICML'25 paper:
+
+- Chenxi Wang, Linxiao Yang, Zhixian Wang, Liang Sun, Yi Wang*, "A Non-isotropic Time Series Diffusion Model with Moving Average Transitions," in 42th Annual Conference on Neural Information Processing Systems (NeurIPS 2024), Vancouver, Canada, Dec. 2024.
 
 ## Requirements
 Python version: 3.10

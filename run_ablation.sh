@@ -1,108 +1,79 @@
 #!/bin/bash
+#####################
+# Backward strategy #
+#####################
 
 gpu=1
-# model_config=(DDPM)
-# model_config=(DDPM_norm_MA_stdsched)
-model_config=(DDPM_IN_MA)
-# model_config=(DDPM_norm_MA_stdsched_T200 DDPM_norm_MA_stdsched_T500 DDPM_norm_MA_stdsched)
-# ratio_diff_steps=(0.02 0.05)
+model_config=DDPM_IN_MA
 ratio_diff_steps=(0.9 0.7 0.5 0.3 0.1 0.02 0.05)
-# ratio_diff_steps=(1.0)
-# model_config=(DDPM_MA DDPM_MA_stdsched)
-# model_config=(DDPM_norm_MA DDPM_norm_MA_stdsched)
 
-save_dir=savings/ablation
-num_train=5
-pred_len=(576)
+save_dir=/home/user/data2/ICML_camera_ready_test/ablation
+num_train=1
+pred_len=576
 seq_len=0
-n_sample=100
+n_sample=5
 data_pth=(
   wind
   mfred
   solar
 )
 
-# # diffusion steps
-for mc in "${model_config[@]}"; do
-  for rds in "${ratio_diff_steps[@]}"; do
-    for i in "${pred_len[@]}"; do
-      for j in "${data_pth[@]}"; do
-        echo $j $i $mc
+# # # diffusion steps
+# for j in "${data_pth[@]}"; do
+#   python -u scripts/train_ablation.py \
+#     -dc $j \
+#     -mc $model_config \
+#     --save_dir $save_dir \
+#     --pred_len $pred_len \
+#     --seq_len $seq_len \
+#     --gpu $gpu --num_train $num_train --batch_size 64
 
-        python -u scripts/train_ablation.py \
-          -dc $j \
-          -mc $mc \
-          --save_dir $save_dir \
-          --pred_len $i \
-          --seq_len $seq_len \
-          --gpu $gpu --num_train $num_train --batch_size 64 --smoke_test
+#   for rds in "${ratio_diff_steps[@]}"; do
 
-        python scripts/sample_ablation_diffstep.py -dc $j \
-          --model_name $mc \
-          --num_train $num_train \
-          --save_dir $save_dir \
-          --w_cond 0 \
-          --n_sample $n_sample \
-          --deterministic \
-          --gpu $gpu \
-          --seq_len $seq_len \
-          --pred_len $i --num_diff_steps $rds --smoke_test
+#     python scripts/sample_ablation_diffstep.py -dc $j \
+#       --model_name $model_config \
+#       --num_train $num_train \
+#       --save_dir $save_dir \
+#       --w_cond 0 \
+#       --n_sample $n_sample \
+#       --deterministic \
+#       --gpu $gpu \
+#       --seq_len $seq_len \
+#       --pred_len $pred_len --num_diff_steps $rds
 
-      done
-    done
-  done
-done
+#   done
+# done
 
-
+#####################
+# Diffusion Modules #
+#####################
 gpu=1
-model_config=(DDPM)
-# model_config=(DDPM_norm_MA_stdsched)
-# model_config=(DDPM DDPM_IN DDPM_MA DDPM_IN_MA)
-# model_config=(DDPM_norm_MA_stdsched_T200 DDPM_norm_MA_stdsched_T500 DDPM_norm_MA_stdsched)
-# ratio_diff_steps=(0.02 0.05)
-# ratio_diff_steps=(0.9 0.7 0.5 0.3 0.1 0.02 0.05)
-ratio_diff_steps=(1.0)
-# model_config=(DDPM_MA DDPM_MA_stdsched)
-# model_config=(DDPM_norm_MA DDPM_norm_MA_stdsched)
+model_config=(DDPM DDPM_IN DDPM_MA DDPM_IN_MA)
 
-# save_dir=/home/user/data/MAD_ablation/savings
-# num_train=5
-# pred_len=(576)
-# seq_len=0
-# n_sample=100
-# data_pth=(
-  # wind
-  # mfred
-  # solar
-# )
 
 # Modules
-for mc in "${model_config[@]}"; do
-  for rds in "${ratio_diff_steps[@]}"; do
-    for i in "${pred_len[@]}"; do
-      for j in "${data_pth[@]}"; do
-        echo $j $i $mc
+for j in "${data_pth[@]}"; do
+  for mc in "${model_config[@]}"; do
 
-        python -u scripts/train_ablation.py \
-          -dc $j \
-          -mc $mc \
-          --save_dir $save_dir \
-          --pred_len $i \
-          --seq_len $seq_len \
-          --gpu $gpu --num_train $num_train --batch_size 64
+      python -u scripts/train_ablation.py \
+        -dc $j \
+        -mc $mc \
+        --save_dir $save_dir \
+        --pred_len $pred_len \
+        --seq_len $seq_len \
+        --gpu $gpu --num_train $num_train --batch_size 64
 
-        python scripts/sample_ablation_module.py -dc $j \
-          --model_name $mc \
-          --num_train $num_train \
-          --save_dir $save_dir \
-          --w_cond 0 \
-          --n_sample $n_sample \
-          --deterministic \
-          --gpu $gpu \
-          --seq_len $seq_len \
-          --pred_len $i --num_diff_steps $rds
+      python scripts/sample_ablation_module.py -dc $j \
+        --model_name $mc \
+        --num_train $num_train \
+        --save_dir $save_dir \
+        --w_cond 0 \
+        --n_sample $n_sample \
+        --deterministic \
+        --gpu $gpu \
+        --seq_len $seq_len \
+        --pred_len $pred_len
 
-      done
     done
   done
 done

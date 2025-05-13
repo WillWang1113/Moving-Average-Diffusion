@@ -13,17 +13,23 @@ from lightning.fabric import seed_everything
 from src import models
 from src.datamodule.data_factory import data_provider
 from src.utils.filters import MovingAvgTime, get_factors
-from src.utils.metrics import calculate_metrics
+from src.utils.metrics import ablation_metrics, get_encoder
 from src.utils.parser import exp_parser
-from src.utils.sample import plot_fcst
+import torch.utils.data
+
+# logging.getLogger("lightning.pytorch").setLevel(logging.DEBUG)
 
 
 def main(args):
+    device = f"cuda:{args.gpu}"
     seed_everything(9, workers=True)
 
     data_config = yaml.safe_load(open(f"configs/dataset/{args.data_config}.yaml", "r"))
     data_config = exp_parser(data_config, vars(args))
-    print(data_config)
+    data_config["features"] = "S"
+    data_config["batch_size"] = 512
+    data_config["condition"] = None
+    # data_config["pred_len"] = 576
 
     # load configs
     root_path = os.path.join(
@@ -40,29 +46,65 @@ def main(args):
         # f"initmodel_{model_args.model}" if args.init_model else "",
         f"cond_{args.condition}",
         # f"startks_{args.start_ks}",
-        f"fast_{args.fast_sample}",
+        # f"fast_{args.fast_sample}",
         f"dtm_{args.deterministic}",
-        f"nsample_{args.n_sample}",
+        # ! Force align
+        # f"rds_{args.num_diff_steps}",
         # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
     ]
     out_name = "_".join(out_name)
-    if (args.num_train == 5) and os.path.exists(
-        os.path.join(
-            exp_path,
-            f"{out_name}.npy",
-        ),
-    ):
-        print("already have metrics.")
-        return 0
-    _, test_dl = data_provider(data_config, "test")
+    print(out_name)
 
-    kernel_size = get_factors(seq_length)
-    kernel_size = np.array(kernel_size)
+    all_data = np.loadtxt(
+        os.path.join(data_config["root_path"], data_config["data_path"]), delimiter=","
+    )
+    all_data = torch.from_numpy(all_data)
+    all_data = torch.nn.functional.interpolate(all_data.unsqueeze(1), size=24)
 
-    # interp_k = int((diffusion_steps - len(kernel_size)) / (len(kernel_size) - 1))
-    # print(interp_k)
+    all_data = all_data.permute(0, 2, 1).float()
+
+    num_train = int(0.7 * len(all_data))
+    num_test = int(0.1 * len(all_data))
+    num_val = len(all_data) - num_train - num_test
+    train_data = all_data[:num_train]
+    val_data = all_data[num_train : num_train + num_val]
+    test_data = all_data[-num_test:]
+
+    class TempDataset(torch.utils.data.Dataset):
+        def __init__(self, data):
+            super().__init__()
+            self.data = data
+
+        def __getitem__(self, index):
+            return {"x": self.data[index]}
+
+        def __len__(self):
+            return len(self.data)
+
+    train_ds = TempDataset(train_data)
+    val_ds = TempDataset(val_data)
+    test_ds = TempDataset(test_data)
+    train_dl = torch.utils.data.DataLoader(
+        train_ds, shuffle=True, batch_size=data_config["batch_size"]
+    )
+    # val_dl = torch.utils.data.DataLoader(
+    #     val_ds, shuffle=True, batch_size=data_config["batch_size"]
+    # )
+    test_dl = torch.utils.data.DataLoader(test_ds, shuffle=False, batch_size=1024)
+
+    # _, train_dl = data_provider(data_config, "train")
+    # _, test_dl = data_provider(data_config, "test")
+    ae_ckpt = os.path.join(root_path, "ae.ckpt")
+    if os.path.exists(ae_ckpt):
+        print("Load pretrained AutoEncoder")
+        ae = torch.load(ae_ckpt)
+    else:
+        ae = get_encoder(train_dl, device)
+        torch.save(ae, ae_ckpt)
+    print("Load data")
+
+    sample_steps = None
     if args.fast_sample:
-        sample_steps = []
         noise_schedule = torch.load(
             os.path.join(
                 root_path,
@@ -70,8 +112,9 @@ def main(args):
             )
         )
         all_K = noise_schedule["alphas"]
-
-        for i in kernel_size:
+        all_factors = get_factors(seq_length)
+        sample_steps = []
+        for i in all_factors:
             ideal_K = MovingAvgTime(i, seq_length).K.unsqueeze(0)
             close_id = torch.argmin(
                 ((all_K.flatten(1) - ideal_K.flatten(1)) ** 2).mean(dim=1)
@@ -79,20 +122,13 @@ def main(args):
             sample_steps.append(close_id.item())
         if 0 not in sample_steps:
             sample_steps.append(0)
-    else:
-        sample_steps = None
+    print(sample_steps)
 
-    # print(kernel_size)
-    # print("factor_only:\t", factor_only)
-    # print("stride=ks:\t", stride_equal_to_kernel_size)
-    print("sample_steps:\t", sample_steps)
-
-    trainer = Trainer(
-        devices=[args.gpu], enable_progress_bar=False, fast_dev_run=args.smoke_test
-    )
+    trainer = Trainer(devices=[args.gpu], fast_dev_run=args.smoke_test)
     avg_m = []
 
     for i in range(args.num_train):
+        print("runtime:\t", i)
         read_d = os.path.join(exp_path, f"best_model_path_{i}.pt")
         best_model_path = torch.load(read_d)
         best_model_path = os.path.join(exp_path, best_model_path.split("/")[-1])
@@ -114,51 +150,60 @@ def main(args):
             sample_steps=sample_steps,
             condition=args.condition,
         )
-
+        diff.eval()
+        print("Finish Config Model")
+        # diff.to(device)
         y_real = []
-        y_pred = trainer.predict(diff, test_dl)
-        y_pred = torch.concat(y_pred, dim=1)
-        for b in test_dl:
-            y_real.append(b["x"])
-            if args.smoke_test:
-                break
-        y_real = torch.concat(y_real)
-        # y_pred = y_pred.cpu().numpy()
-        # y_real = y_real.cpu().numpy()
-        m, y_pred_q, y_pred_point = calculate_metrics(y_pred, y_real)
-        print(m)
-        avg_m.append(m)
+        for batch in test_dl:
+            y_real.append(batch["x"].cpu())
 
-        if i in [0, "t"]:
-            print("plotting")
-            plot_fcst(
-                y_pred_q,
-                y_real,
-                y_pred_point=y_pred_point,
-                save_name=os.path.join(
-                    exp_path,
-                    f"{out_name}.png",
-                ),
-            )
+        y_syn = trainer.predict(diff, test_dl)
+        y_syn = torch.concat(y_syn, dim=1).detach()
+        # y_pred = trainer.predict(diff, test_dl)
+
+        y_real = torch.concat(y_real).detach()
+
+        all_m = []
+        for n in range(args.n_sample):
+            if args.model_name.__contains__("DDPM"):
+                y_syn[n] = (y_syn[n] - y_syn[n].mean(dim=1, keepdim=True)) / torch.sqrt(
+                    torch.var(y_syn[n], dim=1, keepdim=True, unbiased=False) + 1e-6
+                )
+                y_syn[n] = (
+                    y_syn[n]
+                    * torch.sqrt(
+                        torch.var(y_real, dim=1, keepdim=True, unbiased=False) + 1e-6
+                    )
+                ) + y_real.mean(dim=1, keepdim=True)
+
+            m_stat = ablation_metrics(y_syn[n], y_real, ae)
+            # m_stat = context_fid(y_syn[n], y_real, ae)
+            all_m.append(np.array(m_stat).reshape(1, -1))
+        all_m = np.concatenate(all_m).mean(axis=0)
+        print(all_m)
+        # if i == 0:
+        try:
             np.save(
                 os.path.join(
                     exp_path,
-                    f"{out_name}_pred.npy",
+                    f"{out_name}_syn_{i}.npy",
                 ),
-                y_pred,
+                y_syn.squeeze(0).cpu().numpy(),
             )
-        if args.smoke_test:
-            break
-    avg_m = np.array(avg_m)
-    print(avg_m.mean(axis=0))
-    if args.num_train == 5:
+        except:
+            print("Cannot save samples")
+        
+
+    try:
         np.save(
             os.path.join(
                 exp_path,
-                f"{out_name}.npy",
+                f"{out_name}_real.npy",
             ),
-            avg_m,
+            y_real.squeeze(0).cpu().numpy(),
         )
+    except:
+        print("Cannot save")
 
 
 if __name__ == "__main__":
@@ -176,15 +221,17 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", type=int, default=0)
     # Define overrides with dot notation
     parser.add_argument("--deterministic", action="store_true")
-    parser.add_argument("--fast_sample", action="store_true")
     parser.add_argument("--smoke_test", action="store_true")
     parser.add_argument("--n_sample", type=int, default=1)
     parser.add_argument("--w_cond", type=float, default=0.5)
+    parser.add_argument("--fast_sample", action="store_true")
+
+    # parser.add_argument("--num_diff_steps", type=float, default=1.0)
 
     # Define overrides on dataset
     parser.add_argument("--condition", type=str, choices=["sr", "fcst"])
     # parser.add_argument("--start_ks", type=int)
-    # parser.add_argument("--kernel_size", type=int)
+    parser.add_argument("--kernel_size", type=int)
     parser.add_argument("--pred_len", type=int)
     parser.add_argument("--seq_len", type=int)
     parser.add_argument("--batch_size", type=int)

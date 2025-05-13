@@ -6,7 +6,7 @@ from torch.nn import AvgPool1d, functional
 import matplotlib.pyplot as plt
 
 
-def plot_fcst(y_pred: np.ndarray, y_real: np.ndarray, save_name, kernel_size: list = None, y_pred_point=None):
+def plot_fcst(y_pred: np.ndarray, y_real: np.ndarray, save_name, y_pred_point=None):
     fig, ax = plt.subplots(3, 3, figsize=[8, 6])
     ax = ax.flatten()
     if (y_pred.ndim == 4) and (y_pred.shape[:3] == y_real.shape):

@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 import src.backbone
 
 
-class MADTC(L.LightningModule):
+class MATSD(L.LightningModule):
     """MovingAvg Diffusion in Time domain"""
 
     def __init__(
@@ -49,7 +49,7 @@ class MADTC(L.LightningModule):
         x_filtered = self.K[t] @ x
         # ax.plot(x_filtered[0].flatten().cpu(), label='degraded')
         # add noise
-        x_noisy = x_filtered + self.betas[t].unsqueeze(-1) * torch.randn_like(
+        x_noisy = x_filtered + self.betas[t].unsqueeze(1) * torch.randn_like(
             x_filtered
         )
         # ax.plot(x_noisy[0].flatten().cpu(), label='noisy')
