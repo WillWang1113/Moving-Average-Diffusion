@@ -168,7 +168,8 @@ tests/
 notebooks/test.ipynb
 # datasets/
 lightning_logs/
-*.png
+assets/*.png
+./*.png
 *.csv
 base_ckpt/
 checkpoints/

@@ -129,63 +129,24 @@ def main(args):
             y_real.append(batch["x"].cpu())
 
         y_syn = trainer.predict(diff, test_dl)
-        # y_pred = trainer.predict(diff, test_dl)
 
         y_syn = torch.concat(y_syn, dim=1).detach()
         if args.data_config == "solar":
             y_syn = torch.where(y_syn < -6.58696556e-01, -6.58696556e-01, y_syn)
-        # print(y_syn.shape)
-        # y_pred = torch.concat(y_pred, dim=1).detach()
         y_real = torch.concat(y_real).detach()
-        # print(y_real.shape)
-        # print(y_syn[0])
-        # fig, ax = plt.subplots()
-        # ax.plot(y_syn[0,0].flatten().cpu())
-        # ax.plot(y_real[0].flatten().cpu())
-        # fig.savefig('debug.png')
-        # print(y_real_tstr.shape)
-        # y_real_train = torch.concat(y_real_train).detach()
-        # print(y_real_train.shape)
 
         all_m = []
         for n in range(args.n_sample):
-            # m_tstr_lt = tstr_dlinear(
-            #     y_syn[n],
-            #     y_real_tstr,
-            #     seq_len=seq_length // 2,
-            #     pred_len=seq_length // 2,
-            #     device=device,
-            # )
-            # m_tstr_st = tstr_dlinear(
-            #     y_syn[n],
-            #     y_real_tstr,
-            #     seq_len=seq_length // 2,
-            #     pred_len=24,
-            #     device=device,
-            # )
+
             m_stat = sr_metrics(
                 y_syn[n], y_real, kernel_size=args.kernel_size, autoencoder=ae
             )
             all_m.append(np.array([*m_stat]).reshape(1, -1))
         all_m = np.concatenate(all_m).mean(axis=0)
         print(all_m)
-        # if i == 0:
 
-        # print(y_pred.shape)
-        # print(y_real_tstr.shape)
-        # print("Calculate Metrics")
-        # m = sr_metrics(y_pred, y_real, args.kernel_size)
         avg_m.append(all_m)
-        # out_name = [
-        #     # f"initmodel_{model_args.model}" if args.init_model else "",
-        #     f"cond_{args.condition}",
-        #     f"startks_{args.start_ks}",
-        #     f"fast_{args.fast_sample}",
-        #     f"dtm_{args.deterministic}",
-        #     f"strategy_{args.strategy}",
-        #     # f"{round(args.w_cond, 1)}" if args.model_name.__contains__("CFG") else "",
-        # ]
-        # out_name = "_".join(out_name)
+
 
         if i in [0, "t"]:
             print("plotting")

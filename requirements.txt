@@ -1,7 +1,6 @@
 einops==0.8.1
 lightning==2.1.4
 matplotlib==3.8.4
-neuralforecast==1.7.3
 numpy==1.23.5
 pandas==1.5.3
 PyYAML==6.0.2

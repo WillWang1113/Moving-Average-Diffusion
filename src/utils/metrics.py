@@ -1,7 +1,7 @@
+from typing import Optional, Union
 import warnings
 import numpy as np
 import torch
-from neuralforecast.losses.numpy import mae, mqloss, mse
 import tqdm
 
 from torch import nn
@@ -10,52 +10,138 @@ import lightning as L
 import copy
 from scipy import linalg
 
+# mqloss, mae, mse are from neuralforecast.losses.numpy
+def mqloss(
+    y: np.ndarray,
+    y_hat: np.ndarray,
+    quantiles: np.ndarray,
+    weights: Optional[np.ndarray] = None,
+    axis: Optional[int] = None,
+) -> Union[float, np.ndarray]:
+    """Multi-Quantile loss
 
-def RSE(pred, true):
-    return np.sqrt(np.sum((true - pred) ** 2)) / np.sqrt(
-        np.sum((true - true.mean()) ** 2)
-    )
+    Calculates the Multi-Quantile loss (MQL) between `y` and `y_hat`.
+    MQL calculates the average multi-quantile Loss for
+    a given set of quantiles, based on the absolute
+    difference between predicted quantiles and observed values.
+
+    $$ \mathrm{MQL}(\\mathbf{y}_{\\tau},[\\mathbf{\hat{y}}^{(q_{1})}_{\\tau}, ... ,\hat{y}^{(q_{n})}_{\\tau}]) = \\frac{1}{n} \\sum_{q_{i}} \mathrm{QL}(\\mathbf{y}_{\\tau}, \\mathbf{\hat{y}}^{(q_{i})}_{\\tau}) $$
+
+    The limit behavior of MQL allows to measure the accuracy
+    of a full predictive distribution $\mathbf{\hat{F}}_{\\tau}$ with
+    the continuous ranked probability score (CRPS). This can be achieved
+    through a numerical integration technique, that discretizes the quantiles
+    and treats the CRPS integral with a left Riemann approximation, averaging over
+    uniformly distanced quantiles.
+
+    $$ \mathrm{CRPS}(y_{\\tau}, \mathbf{\hat{F}}_{\\tau}) = \int^{1}_{0} \mathrm{QL}(y_{\\tau}, \hat{y}^{(q)}_{\\tau}) dq $$
+
+    **Parameters:**<br>
+    `y`: numpy array, Actual values.<br>
+    `y_hat`: numpy array, Predicted values.<br>
+    `quantiles`: numpy array,(n_quantiles). Quantiles to estimate from the distribution of y.<br>
+    `mask`: numpy array, Specifies date stamps per serie to consider in loss.<br>
+
+    **Returns:**<br>
+    `mqloss`: numpy array, (single value).
+
+    **References:**<br>
+    [Roger Koenker and Gilbert Bassett, Jr., "Regression Quantiles".](https://www.jstor.org/stable/1913643)<br>
+    [James E. Matheson and Robert L. Winkler, "Scoring Rules for Continuous Probability Distributions".](https://www.jstor.org/stable/2629907)
+    """
+    if weights is None:
+        weights = np.ones(y.shape)
+
+    # _metric_protections(y, y_hat, weights)
+    n_q = len(quantiles)
+
+    y_rep = np.expand_dims(y, axis=-1)
+    error = y_hat - y_rep
+    sq = np.maximum(-error, np.zeros_like(error))
+    s1_q = np.maximum(error, np.zeros_like(error))
+    mqloss = quantiles * sq + (1 - quantiles) * s1_q
+
+    # Match y/weights dimensions and compute weighted average
+    weights = np.repeat(np.expand_dims(weights, axis=-1), repeats=n_q, axis=-1)
+    mqloss = np.average(mqloss, weights=weights, axis=axis)
+
+    return mqloss
 
 
-def CORR(pred, true):
-    u = ((true - true.mean(0)) * (pred - pred.mean(0))).sum(0)
-    d = np.sqrt(((true - true.mean(0)) ** 2 * (pred - pred.mean(0)) ** 2).sum(0))
-    return (u / d).mean(-1)
+def mae(
+    y: np.ndarray,
+    y_hat: np.ndarray,
+    weights: Optional[np.ndarray] = None,
+    axis: Optional[int] = None,
+) -> Union[float, np.ndarray]:
+    """Mean Absolute Error
 
+    Calculates Mean Absolute Error between
+    `y` and `y_hat`. MAE measures the relative prediction
+    accuracy of a forecasting method by calculating the
+    deviation of the prediction and the true
+    value at a given time and averages these devations
+    over the length of the series.
 
-def MAE(pred, true):
-    return np.mean(np.abs(pred - true))
+    $$ \mathrm{MAE}(\\mathbf{y}_{\\tau}, \\mathbf{\hat{y}}_{\\tau}) = \\frac{1}{H} \\sum^{t+H}_{\\tau=t+1} |y_{\\tau} - \hat{y}_{\\tau}| $$
 
+    **Parameters:**<br>
+    `y`: numpy array, Actual values.<br>
+    `y_hat`: numpy array, Predicted values.<br>
+    `mask`: numpy array, Specifies date stamps per serie to consider in loss.<br>
 
-def MSE(pred, true):
-    return np.mean((pred - true) ** 2)
+    **Returns:**<br>
+    `mae`: numpy array, (single value).
+    """
+    # _metric_protections(y, y_hat, weights)
 
+    delta_y = np.abs(y - y_hat)
+    if weights is not None:
+        mae = np.average(
+            delta_y[~np.isnan(delta_y)], weights=weights[~np.isnan(delta_y)], axis=axis
+        )
+    else:
+        mae = np.nanmean(delta_y, axis=axis)
 
-def RMSE(pred, true):
-    return np.sqrt(MSE(pred, true))
+    return mae
 
+def mse(
+    y: np.ndarray,
+    y_hat: np.ndarray,
+    weights: Optional[np.ndarray] = None,
+    axis: Optional[int] = None,
+) -> Union[float, np.ndarray]:
+    """Mean Squared Error
 
-def MAPE(pred, true):
-    return np.mean(np.abs((pred - true) / true))
+    Calculates Mean Squared Error between
+    `y` and `y_hat`. MSE measures the relative prediction
+    accuracy of a forecasting method by calculating the
+    squared deviation of the prediction and the true
+    value at a given time, and averages these devations
+    over the length of the series.
 
+    $$ \mathrm{MSE}(\\mathbf{y}_{\\tau}, \\mathbf{\hat{y}}_{\\tau}) = \\frac{1}{H} \\sum^{t+H}_{\\tau=t+1} (y_{\\tau} - \hat{y}_{\\tau})^{2} $$
 
-def MSPE(pred, true):
-    return np.mean(np.square((pred - true) / true))
+    **Parameters:**<br>
+    `y`: numpy array, Actual values.<br>
+    `y_hat`: numpy array, Predicted values.<br>
+    `mask`: numpy array, Specifies date stamps per serie to consider in loss.<br>
 
+    **Returns:**<br>
+    `mse`: numpy array, (single value).
+    """
+    # _metric_protections(y, y_hat, weights)
 
-def metric(pred, true):
-    # mae = MAE(pred, true)
-    # mse = MSE(pred, true)
-    # rmse = RMSE(pred, true)
-    # mape = MAPE(pred, true)
-    # mspe = MSPE(pred, true)
-    point_pred = np.median(pred, axis=-1)
-    mean_mse = MSE(np.mean(point_pred, axis=1), np.mean(true, axis=1))
-    mse = MSE(point_pred, true)
-    crps = mqloss(true, pred, quantiles=(np.arange(9) + 1) / 10)
+    delta_y = np.square(y - y_hat)
+    if weights is not None:
+        mse = np.average(
+            delta_y[~np.isnan(delta_y)], weights=weights[~np.isnan(delta_y)], axis=axis
+        )
+    else:
+        mse = np.nanmean(delta_y, axis=axis)
 
-    return mean_mse, mse, crps
-    # return mae, mse, rmse, mape, mspe
+    return mse
+
 
 
 def calculate_metrics(
@@ -66,11 +152,7 @@ def calculate_metrics(
 ):
     y_pred = y_pred.cpu().numpy()
     y_real = y_real.cpu().numpy()
-    # print(y_pred.shape)
-    # print(y_real.shape)
 
-    # if isinstance(y_pred, np.ndarray) and isinstance(y_real, np.ndarray):
-    print("Evaluate on highest resolution")
     assert y_pred.ndim == 4
     assert y_pred[0].shape == y_real.shape
     print(y_pred.shape)
@@ -118,13 +200,9 @@ def sr_metrics(y_pred, y_real, kernel_size, autoencoder):
     y_pred = y_pred.squeeze(0)
     con_err = consistency_error(y_pred, y_real, kernel_size)
     lsd = log_spectral_distance(y_pred, y_real)
-    mse = MSE(y_pred.cpu().numpy(), y_real.cpu().numpy())
+    mse_cal = mse(y_pred.cpu().numpy(), y_real.cpu().numpy())
     cfid = context_fid(y_pred, y_real, autoencoder)
-    # st_lps = tstr_dlinear(y_pred, y_real, seq_len=96, pred_len=16)
-    # lt_lps = tstr_dlinear(y_pred, y_real, seq_len=96, pred_len=192)
-    # lps_ideal = tstr_dlinear(y_real, y_real)
-    return mse, lsd, con_err, cfid
-    # return mse
+    return mse_cal, lsd, con_err, cfid
 
 
 class ConvEncoder(nn.Module):
