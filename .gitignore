@@ -166,7 +166,7 @@ runs/
 tests/
 ./*.csv
 notebooks/test.ipynb
-datasets/
+# datasets/
 lightning_logs/
 *.png
 *.csv
