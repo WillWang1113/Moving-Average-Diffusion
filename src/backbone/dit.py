@@ -9,16 +9,17 @@
 # MAE: https://github.com/facebookresearch/mae/blob/main/models_mae.py
 # --------------------------------------------------------
 
+import math
+
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-import math
-from ..layers.MLP import Mlp
-from ..layers.SelfAttention_Family import Attention
-from ..layers.Embed import PatchEmbed
 from torchvision.ops import MLP
 
-from src.models.blocks import RevIN
+from ..layers.Embed import PatchEmbed
+from ..layers.MLP import Mlp
+from ..layers.revin import RevIN
+from ..layers.SelfAttention_Family import Attention
 
 
 def modulate(x, shift, scale):
@@ -198,7 +199,7 @@ class DiTBlock(nn.Module):
             in_features=hidden_size,
             hidden_features=mlp_hidden_dim,
             act_layer=approx_gelu,
-            **block_kwargs
+            **block_kwargs,
         )
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
@@ -402,12 +403,18 @@ class DiT(nn.Module):
 
         if condition is not None:
             condition = self.cond_embed(condition, train, force_drop_ids)  # (N, D)
-            y_pred = self.pred_dec(condition).reshape(-1, self.seq_length, self.in_channels)
-            
-            x_denorm = self.cond_embed.rev(y_pred, "denorm") if self.cond_embed.norm else y_pred
+            y_pred = self.pred_dec(condition).reshape(
+                -1, self.seq_length, self.in_channels
+            )
+
+            x_denorm = (
+                self.cond_embed.rev(y_pred, "denorm")
+                if self.cond_embed.norm
+                else y_pred
+            )
             x_mean = self.mean_dec(x_denorm.permute(0, 2, 1)).permute(0, 2, 1)
             x_std = self.std_dec(x_denorm.permute(0, 2, 1)).permute(0, 2, 1)
-            
+
             c = t + condition  # (N, D)
         else:
             x_mean, x_std = (

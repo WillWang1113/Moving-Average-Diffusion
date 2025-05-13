@@ -3,10 +3,8 @@ import sys
 import torch
 from torch import nn
 from torchvision.ops import MLP
-
-from src.models.blocks import RevIN
-
-from ..models.embedding import SinusoidalPosEmb
+from ..layers.revin import RevIN
+from ..layers.Embed import SinusoidalPosEmb
 
 thismodule = sys.modules[__name__]
 
@@ -168,8 +166,6 @@ class MLPBackbone(nn.Module):
 
         self.seq_channels = seq_channels
         self.seq_length = seq_length
-
-
 
     def forward(
         self,

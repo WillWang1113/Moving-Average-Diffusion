@@ -1,11 +1,10 @@
 import math
 import sys
-from matplotlib import pyplot as plt
 import torch
 import tqdm
 import os
 from src.utils.filters import get_factors
-from src.utils.filters import MovingAvgTime, MovingAvgFreq
+from src.utils.filters import MovingAvgTime
 
 thismodule = sys.modules[__name__]
 

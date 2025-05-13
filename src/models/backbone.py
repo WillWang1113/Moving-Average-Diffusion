@@ -1,36 +1,33 @@
-import sys
-import torch
-from typing import List, Union, Tuple
-from torch import is_complex, nn
-from torchvision.ops import MLP
-import numpy as np
 import math
+import sys
+from typing import List, Tuple, Union
 
-from src.layers.Autoformer_EncDec import series_decomp
-from ..layers.MLP import Mlp
-from ..layers.SelfAttention_Family import Attention
-from ..layers.Embed import PatchEmbed
+import numpy as np
+import torch
+from torch import nn
+from torchvision.ops import MLP
 
-
-from ..layers.SelfAttention_Family import AttentionLayer, FullAttention
-from ..layers.Transformer_EncDec import Encoder, EncoderLayer
 from src.utils.filters import MovingAvgFreq
 from src.utils.fourier import (
-    real_imag_to_complex_freq,
     complex_freq_to_real_imag,
+    real_imag_to_complex_freq,
+)
+
+from ..layers.Embed import PatchEmbed
+
+# from src.layers.Autoformer_EncDec import series_decomp
+from ..layers.MLP import Mlp
+from ..layers.SelfAttention_Family import Attention, AttentionLayer, FullAttention
+from ..layers.Transformer_EncDec import Encoder, EncoderLayer
+from .blocks import (
+    DownBlock,
+    Downsample,
+    MiddleBlock,
+    ResidualBlock,
+    UpBlock,
+    Upsample,
 )
 from .embedding import SinusoidalPosEmb
-from .blocks import (
-    UpBlock,
-    DownBlock,
-    MiddleBlock,
-    Downsample,
-    Upsample,
-    ResidualBlock,
-    CRELU,
-    CSoftshrink,
-    CMLP,
-)
 
 thismodule = sys.modules[__name__]
 

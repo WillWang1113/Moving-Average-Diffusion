@@ -1,8 +1,6 @@
 import lightning as L
-import numpy as np
 import torch
 import torch.nn.functional as F
-from matplotlib import pyplot as plt
 
 import src.backbone
 

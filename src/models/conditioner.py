@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torchvision.ops import MLP
 
-from src.models.blocks import RevIN, CRELU, CMLP, RevINMean
+from src.models.blocks import RevIN, CMLP, RevINMean
 from ..layers.Autoformer_EncDec import series_decomp
 from ..utils.fourier import dft
 

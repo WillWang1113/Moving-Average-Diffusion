@@ -1,13 +1,7 @@
 import warnings
 import numpy as np
-from sklearn.linear_model import LinearRegression, Ridge
-from sklearn.model_selection import train_test_split
 import torch
-from torch.nn import AvgPool1d, functional
-import matplotlib.pyplot as plt
 from neuralforecast.losses.numpy import mae, mqloss, mse
-from typing import Optional, Union
-import ot
 import tqdm
 from src.layers.Autoformer_EncDec import series_decomp
 from torch.utils.data import DataLoader, TensorDataset
@@ -16,225 +10,7 @@ from torch import nn
 import lightning as L
 
 import copy
-from torchvision.ops import MLP
-import torch.nn.functional as F
 from scipy import linalg
-
-class WassersteinDistances:
-    """Calculate Wasserstein distance of two datasets in various ways.
-
-    Parameters
-    ----------
-    original_data : np.ndarray
-        Original data set, an (n, d) ndarray.
-    other_data : np.ndarray
-        Other data set, which might be imputed or simulated data, also
-        an (n, d) ndarray.
-    normalisation : Normalisation
-        Method of normalising data.  If 'none', no normalisation will be used.
-        If 'standatdise', then standardise the data by dividing by the
-        standard deviation of the original data.  (There is no need to
-        subtract the mean, as this does not affect the Wasserstein distance.)
-
-    """
-
-    def __init__(
-        self,
-        original_data: np.ndarray,
-        other_data: np.ndarray,
-        normalisation: Optional[str] = "none",
-        seed: Optional[int] = None,
-    ) -> None:
-        self.original_data = original_data
-        self.other_data = other_data
-        self.normalisation = normalisation
-        self.rng = np.random.default_rng(seed)
-
-    def random_direction(self, dim: int) -> np.ndarray:
-        """Generate a unit vector in a random direction.
-
-        Parameters
-        ----------
-        dim : int
-            Dimension of vector to be generated.
-
-        Returns
-        -------
-        unit_vector : np.ndarray
-            A unit vector of shape (dim,).
-
-        """
-        vector = self.rng.normal(size=dim)
-        vector_magnitude = np.linalg.norm(vector)
-        unit_vector = vector / vector_magnitude
-        return unit_vector
-
-    def get_random_directions(self, n_directions: int):
-        """Get random directions for an experiment.
-
-        Parameters
-        ----------
-        n_directions : int
-            The number of directions to produce.
-
-        Returns
-        -------
-        directions : list[np.ndarray]
-            A list of unit vectors specifying the directions to use.  The
-            results will be given in the same order.
-
-        """
-        dimension = self.original_data.shape[1]
-        directions = [self.random_direction(dimension) for _ in range(n_directions)]
-        return directions
-
-    def get_marginal_directions(self):
-        """Get marginal directions for an experiment.
-
-        These are just the standard basis vectors.
-
-        Returns
-        -------
-        directions : list[np.ndarray]
-            A list of standard unit vectors.
-
-        """
-        dimension = self.original_data.shape[1]
-        directions = [np.identity(dimension)[i] for i in range(dimension)]
-        return directions
-
-    def feature_distance(self, feature: int):
-        """Calculate the dataset distance for a specific feature.
-
-        This calculates the Wasserstein 2-distance between the
-        specified feature in the two datasets.
-
-        Parameters
-        ----------
-        feature : int
-            The column number of the feature to consider: 0, 1, 2, ...,
-            `num_fields` - 1.
-
-        Returns
-        -------
-        distance : float
-            The Wasserstein 2-distance.
-
-        """
-        original = self.original_data[:, feature]
-        other = self.other_data[:, feature]
-        original_normalised, other_normalised = self._normalise(original, other)
-        distance = ot.emd2_1d(original_normalised, other_normalised)
-        distance = np.sqrt(distance)
-        return float(distance)
-
-    def directional_distance(self, direction: np.ndarray):
-        """Calculate the dataset distance in a specified direction.
-
-        This projects the two datasets onto the specified direction (that is,
-        a 1-dimensional subspace), and calculates the Wasserstein distance
-        between the two resulting distributions.
-
-        Parameters
-        ----------
-        direction : np.array
-            The direction in which to calculate the W_2 distance between
-            the datasets.
-
-        Returns
-        -------
-        distance : float
-            The calculated W_2^2 distance.
-
-        """
-        original = self._project(self.original_data, direction)
-        other = self._project(self.other_data, direction)
-        original_normed, other_normed = self._normalise(original, other)
-        distance = ot.emd2_1d(original_normed, other_normed)
-        distance = np.sqrt(distance)
-        return float(distance)
-
-    @staticmethod
-    def _project(data: np.ndarray, direction: np.ndarray) -> np.ndarray:
-        proj = data @ direction
-        assert isinstance(proj, np.ndarray)
-        return proj
-
-    def _normalise(
-        self, orig: np.ndarray, other: np.ndarray
-    ):
-        if self.normalisation == "none":
-            return orig, other
-        if self.normalisation == "standardise":
-            sd = np.std(orig)
-            return orig / sd, other / sd
-        raise ValueError(f"Unrecognised normalisation type: {self.normalisation}")
-
-    def sliced_distances(self, num_directions: int):
-        """Calculate the sliced Wasserstein distance between datasets.
-
-        Args:
-            num_directions (int): Number of directions in the sliced Wasserstein estimation.
-
-        Returns:
-            np.ndarray: distribution of Wasserstein distances over all directions.
-        """
-        directions = self.get_random_directions(num_directions)
-        distances = []
-        for direction in tqdm.tqdm(
-            directions,
-            desc="Computing sliced Wasserstein",
-            unit="proj",
-            leave=False,
-            colour="blue",
-        ):
-            distances.append(self.directional_distance(direction))
-        return np.array(distances)
-
-    def marginal_distances(self) -> np.ndarray:
-        """Calculate the marginal Wasserstein distances between datasets.
-
-        Returns:
-            np.ndarray: distribution of Wasserstein distances over all features.
-        """
-        n_features = self.original_data.shape[1]
-        distances = []
-        for feature in tqdm.tqdm(
-            range(n_features),
-            desc="Computing marginal Wasserstein",
-            unit="feature",
-            leave=False,
-            colour="blue",
-        ):
-            distances.append(self.feature_distance(feature))
-        return np.array(distances)
-    
-    
-
-# def mqloss(
-#     y: np.ndarray,
-#     y_hat: np.ndarray,
-#     quantiles: np.ndarray,
-#     weights: Optional[np.ndarray] = None,
-#     axis: Optional[int] = None,
-# ) -> Union[float, np.ndarray]:
-#     if weights is None:
-#         weights = np.ones(y.shape)
-
-#     # _metric_protections(y, y_hat, weights)
-#     n_q = len(quantiles)
-
-#     y_rep = np.expand_dims(y, axis=-1)
-#     error = y_hat - y_rep
-#     sq = np.maximum(-error, np.zeros_like(error))
-#     s1_q = np.maximum(error, np.zeros_like(error))
-#     mqloss = quantiles * sq + (1 - quantiles) * s1_q
-
-#     # Match y/weights dimensions and compute weighted average
-#     weights = np.repeat(np.expand_dims(weights, axis=-1), repeats=n_q, axis=-1)
-#     mqloss = np.average(mqloss, weights=weights, axis=axis)
-
-#     return mqloss
 
 
 def RSE(pred, true):
@@ -284,69 +60,6 @@ def metric(pred, true):
     # return mae, mse, rmse, mape, mspe
 
 
-# def crps(y_pred, y_real, sample_weight=None):
-#     num_samples = y_pred.shape[0]
-#     absolute_error = np.mean(np.abs(y_pred - y_real), axis=0)
-
-#     if num_samples == 1:
-#         return np.average(absolute_error, weights=sample_weight)
-
-#     y_pred_sort = np.sort(y_pred, axis=0)
-#     b0 = y_pred.mean(axis=0)
-#     b1_values = y_pred_sort * np.arange(num_samples).reshape(
-#         -1, *[1 for _ in range(len(y_pred.shape) - 1)]
-#     )
-#     b1 = b1_values.mean(axis=0) / num_samples
-
-#     per_obs_crps = absolute_error + b0 - 2 * b1
-#     return np.average(per_obs_crps, weights=sample_weight)
-
-
-# def mpbl(y_pred, y_real, quantiles=[0.05 * (1 + i) for i in range(19)]):
-#     y_pred_q = np.quantile(y_pred, quantiles, axis=0)
-#     quantiles = np.array(quantiles).reshape(-1, *[1 for _ in range(y_pred_q.ndim - 1)])
-#     error = y_real - y_pred_q  # * n*9
-#     first_term = quantiles * error
-#     second_term = (quantiles - 1) * error
-#     loss = np.maximum(first_term, second_term)
-#     return loss.mean()
-
-
-# def mae(y_pred, y_real, normalize=False):
-#     if y_pred.ndim <= 3:
-#         y_pred_point = y_pred
-#     elif y_pred.ndim == 4:
-#         y_pred_point = np.median(y_pred, axis=0)
-#     else:
-#         raise ValueError('wrong y_pred shape, either ndim ==4 or 3 less.')
-#     # y_pred_point = np.median(y_pred, axis=0)
-#     scale = np.mean(np.abs(y_real)) if normalize else 1
-#     return np.mean(np.abs(y_pred_point - y_real)) / scale
-
-
-# def mse(y_pred, y_real):
-#     if y_pred.ndim <= 3:
-#         y_pred_point = y_pred
-#     elif y_pred.ndim == 4:
-#         y_pred_point = np.median(y_pred, axis=0)
-#     else:
-#         raise ValueError('wrong y_pred shape, either ndim ==4 or 3 less.')
-#     # y_pred_point = np.median(y_pred, axis=0)
-#     return np.mean((y_pred_point - y_real) ** 2)
-
-
-# def rmse(y_pred, y_real, normalize=False):
-#     if y_pred.ndim <= 3:
-#         y_pred_point = y_pred
-#     elif y_pred.ndim == 4:
-#         y_pred_point = np.median(y_pred, axis=0)
-#     else:
-#         raise ValueError('wrong y_pred shape, either ndim ==4 or 3 less.')
-#     MSE = np.mean((y_pred_point - y_real) ** 2)
-#     scale = np.mean(np.abs(y_real)) if normalize else 1
-#     return np.sqrt(MSE) / scale
-
-
 def calculate_metrics(
     y_pred,
     y_real,
@@ -373,62 +86,6 @@ def calculate_metrics(
     MSE = mse(y_real, y_pred_point)
     MQL = mqloss(y_real, y_pred_q, quantiles=np.array(quantiles))
     return (MAE, MSE, MQL), y_pred_q, y_pred_point
-
-    # elif isinstance(y_pred, list) and isinstance(y_real, list):
-    #     print("Evaluate on multi resolutions")
-    #     all_res_metric = []
-    #     all_res_pred_q = []
-    #     all_res_pred_point = []
-
-    #     for i in range(len(y_pred)):
-    #         res_y_pred, res_y_real = y_pred[i], y_real[i]
-
-    #         assert res_y_pred.ndim == 4
-    #         assert res_y_pred[0].shape == y_real.shape
-    #         res_y_pred_point = np.median(res_y_pred, axis=0)
-    #         res_y_pred_q = np.quantile(res_y_pred, quantiles, axis=0)
-    #         res_y_pred_q = np.transpose(res_y_pred_q, (1, 2, 3, 0))
-
-    #         MAE = mae(res_y_real, res_y_pred_point)
-    #         MSE = mse(res_y_real, res_y_pred_point)
-    #         MQL = mqloss(res_y_real, res_y_pred_q, quantiles=np.array(quantiles))
-
-    #         all_res_metric.append((MAE, MSE, MQL))
-    #         all_res_pred_q.append(res_y_pred_q)
-    #         all_res_pred_point.append(all_res_pred_point)
-
-    #         # RMSE = rmse(res_y_pred, res_y_real, normalize)
-    #         # MAE = mae(res_y_pred, res_y_real, normalize)
-    #         # CRPS = crps(res_y_pred, res_y_real)
-    #         # MPBL = mpbl(res_y_pred, res_y_real)
-    #         # print(RMSE)
-    #         # all_res_metric.append((RMSE, MAE, CRPS, MPBL))
-    #     return all_res_metric, all_res_pred_q, all_res_pred_point
-    # else:
-    #     raise ValueError("wrong y_pred shape")
-
-
-# class Model(nn.Module):
-#     """
-#     Paper link: https://arxiv.org/pdf/2205.13504.pdf
-#     """
-
-#     def __init__(self, seq_len, pred_len, enc_in, moving_avg=25, individual=False):
-#         """
-#         individual: Bool, whether shared model among different variates.
-#         """
-#         super(Model, self).__init__()
-#         self.Linear_Seasonal = nn.Linear(self.seq_len, self.pred_len)
-
-#     def encoder(self, x):
-#         x = self.Linear_Seasonal(x.permute(0,2,1))
-#         x = x.permute(0, 2, 1)
-#         return x
-
-#     def forward(self, x_enc: torch.Tensor):
-#         # Encoder
-#         x = self.encoder(x_enc)
-#         return x
 
 
 class Model(nn.Module):
@@ -569,27 +226,6 @@ def tstr_dlinear(y_syn, y_real, seq_len=96, pred_len=16, device="cpu"):
         torch.concat([model(x.to(device)) for (x, y) in test_dl]).detach().cpu().numpy()
     )
     return MSE(y_pred_tstr, y_test.cpu().numpy())
-
-
-# def tstr(y_pred, y_real):
-#     if isinstance(y_pred, torch.Tensor):
-#         y_pred = y_pred.cpu().numpy()
-#     if isinstance(y_real, torch.Tensor):
-#         y_real = y_real.cpu().numpy()
-#     all_mse = []
-#     # model = MLP
-#     for i in range(y_pred.shape[-1]):
-#         x, y, y_r = y_pred[:, -33:-1, i], y_pred[:, -1, [i]], y_real[:, -1, [i]]
-#         x_train, x_test, y_train, _, _, y_test = train_test_split(
-#             x, y, y_r, test_size=0.25, shuffle=False
-#         )
-
-#         reg_model = LinearRegression()
-#         reg_model.fit(x_train, y_train)
-#         tstr_y_pred = reg_model.predict(x_test)
-#         all_mse.append(MSE(tstr_y_pred, y_test))
-
-#     return np.mean(all_mse)
 
 
 def sr_metrics(y_pred, y_real, kernel_size, autoencoder):
@@ -765,12 +401,12 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     sigma1 = np.atleast_2d(sigma1)
     sigma2 = np.atleast_2d(sigma2)
 
-    assert (
-        mu1.shape == mu2.shape
-    ), "Training and test mean vectors have different lengths"
-    assert (
-        sigma1.shape == sigma2.shape
-    ), "Training and test covariances have different dimensions"
+    assert mu1.shape == mu2.shape, (
+        "Training and test mean vectors have different lengths"
+    )
+    assert sigma1.shape == sigma2.shape, (
+        "Training and test covariances have different dimensions"
+    )
 
     diff = mu1 - mu2
     # product might be almost singular
@@ -826,7 +462,7 @@ def get_encoder(train_dl, device):
     for i in tqdm.tqdm(range(50)):
         # train_loss_epoch = 0
         for x in train_dl:
-            x = batch['x'].to(device)
+            x = batch["x"].to(device)
             optim.zero_grad()
             loss = torch.nn.functional.mse_loss(model(x), x)
             loss.backward()
