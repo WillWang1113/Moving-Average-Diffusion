@@ -1,11 +1,13 @@
 #!/bin/bash
 
 gpu=0
-model_config=(DDPM_IN_MA)
+model_config=(MATSD_uncond)
 
 save_dir=/home/user/data2/ICML_camera_ready_test/uncond
 num_train=1
+# pred_len=24 means generating L=24 time series
 pred_len=(24)
+# seq_len=0 means no look-back window, because unconditional generation instead of forecasting
 seq_len=0
 n_sample=1
 data_pth=(
